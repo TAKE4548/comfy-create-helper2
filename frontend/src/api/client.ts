@@ -15,6 +15,7 @@ export * from './domains/comfy'
 export * from './domains/bindingRules'
 export * from './domains/nodeSelectors'
 export * from './domains/promptTemplates'
+export * from './domains/refImages'
 export { comfyApi } from './domains/comfy'
 
 // Re-export all types from ./types for complete backward compatibility

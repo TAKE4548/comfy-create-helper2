@@ -494,4 +494,14 @@ describe('useWorkflowParams hook - remapping backfill', () => {
       );
     });
   });
+
+it('[REQ-427/AC-8] loadSnapshotParams restores a reference-image token and excludes reserved keys', () => {
+  const token = `refimg:${'c'.repeat(64)}.webp`;
+  const { result } = renderHook(() => useWorkflowParams(undefined, null), { wrapper: createWrapper() });
+  act(() => result.current.loadSnapshotParams({ ref_image: token, __prompt_surgeon_metadata_v1: '{}' }));
+  const values = useGenerationStore.getState().paramValues;
+  expect(values.ref_image).toBe(token);
+  expect(Object.keys(values)).not.toContain('__prompt_surgeon_metadata_v1');
+  expect(values[PROMPT_RECORD_KEY]).toBeUndefined();
+});
 });

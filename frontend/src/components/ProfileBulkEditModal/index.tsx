@@ -36,6 +36,7 @@ export function ProfileBulkEditModal({
   const [activeTab, setActiveTab] = useState<Tab>('prompt');
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<BulkEditPayload | null>(null);
+  const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
 
   const state = useProfileBulkEditState(selectedPresets, mappingMasters, activeTab);
 
@@ -44,6 +45,8 @@ export function ProfileBulkEditModal({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The image picker (shared Modal) handles its own Escape; leave this modal open.
+        if (isImagePickerOpen) return;
         if (state.isAddAssetOpen) {
           state.setIsAddAssetOpen(false);
         } else if (showConfirm) {
@@ -57,7 +60,7 @@ export function ProfileBulkEditModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, showConfirm, state.isAddAssetOpen, onClose, state.setIsAddAssetOpen]);
+  }, [isOpen, showConfirm, isImagePickerOpen, state.isAddAssetOpen, onClose, state.setIsAddAssetOpen]);
 
   if (!isOpen) return null;
   const count = selectedPresets.length;
@@ -209,6 +212,7 @@ export function ProfileBulkEditModal({
               setBatchSizeEnabled={state.setBatchSizeEnabled}
               batchSizeInput={state.batchSizeInput}
               setBatchSizeInput={state.setBatchSizeInput}
+              onImagePickerOpenChange={setIsImagePickerOpen}
             />
           )}
         </div>

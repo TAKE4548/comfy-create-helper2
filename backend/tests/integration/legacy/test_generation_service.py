@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import io
 import logging
+import os
+import time
 from typing import Any, Literal
 from uuid import uuid4
 
 import pytest
+from hypothesis import given, settings as hyp_settings, strategies as st
+from PIL import Image
+from starlette.exceptions import HTTPException
 
 from app.schemas.generation import BatchRequest, CancelRequest, CancelTarget, JobStatus, ReleaseRequest
+from app.services.comfy_generation_bridge import UpstreamResponseError
+from app.services.ref_image_store import RefImageStore
+from app.services.ref_image_supply import collect_ref_ids, replace_ref_tokens
 from app.services.generation_service import GenerationService, _should_log_reconcile_failure
 
 
@@ -154,6 +164,14 @@ class FakeBridge:
         self.submit_gate: asyncio.Event | None = None
         self.upstream_state: dict[str, bool | str | None] = {"http_ready": True, "ws_connected": True, "failure_since": None}
         self.previews: dict[str, tuple[bytes, str]] = {}
+        self.uploads: list[dict[str, Any]] = []
+        self.upload_error: Exception | None = None
+
+    async def upload_image(self, data: bytes, filename: str, media_type: str, *, subfolder: str = "prompt_surgeon_ref") -> dict[str, str]:
+        self.uploads.append({"data": data, "filename": filename, "media_type": media_type, "subfolder": subfolder})
+        if self.upload_error:
+            raise self.upload_error
+        return {"name": filename, "subfolder": subfolder, "type": "input"}
 
     def get_upstream_state(self) -> dict[str, Any]:
         return dict(self.upstream_state)
@@ -2404,3 +2422,247 @@ async def test_req401_ac3_bulk_cancel_global_with_upstream_lost_jobs_transitions
         await service.stop()
 
 
+
+
+# ---- reference image supply ----
+
+
+def _png_bytes(color: tuple[int, int, int] = (200, 10, 10)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _ref_payload(graph: dict[str, Any]) -> BatchRequest:
+    data = _payload().model_dump(mode="json")
+    data["items"][0]["graph"] = graph
+    return BatchRequest.model_validate(data)
+
+
+def _detail(exc: HTTPException) -> dict[str, Any]:
+    detail: Any = exc.detail
+    assert isinstance(detail, dict)
+    return detail
+
+
+def _load_graph(token: str) -> dict[str, Any]:
+    return {"10": {"class_type": "LoadImage", "inputs": {"image": token, "upload": "image"}}}
+
+
+def _new_service(bridge: FakeBridge | None = None) -> tuple[GenerationService, MemoryRepository, FakeBridge]:
+    repository = MemoryRepository()
+    fake = bridge or FakeBridge()
+    service = GenerationService(repository, fake, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=None)
+    return service, repository, fake
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_worker_uploads_reference_once_and_substitutes_token_before_submit() -> None:
+    """[REQ-427/AC-6] A refimg token in the graph is uploaded once and replaced by the ComfyUI reference name before POST /prompt."""
+    stored = RefImageStore.default().save_bytes(_png_bytes())
+    token = f"refimg:{stored.ref_id}"
+    graph = _load_graph(token)
+    graph["11"] = {"class_type": "LoadImage", "inputs": {"image": token, "upload": "image"}}
+    service, repository, bridge = _new_service()
+    await service.start()
+    accepted = await service.accept(_ref_payload(graph))
+    await asyncio.sleep(0.1)
+    job = repository.jobs[accepted["job_ids"][0]]
+    assert len(bridge.uploads) == 1
+    assert bridge.uploads[0]["filename"] == stored.ref_id
+    assert bridge.uploads[0]["data"] == _png_bytes()
+    assert len(bridge.submissions) == 1
+    expected = f"prompt_surgeon_ref/{stored.ref_id}"
+    assert bridge.submissions[0]["10"]["inputs"]["image"] == expected
+    assert bridge.submissions[0]["11"]["inputs"]["image"] == expected
+    assert bridge.submissions[0]["10"]["inputs"]["upload"] == "image"
+    assert job["status"] == "submitting"
+    assert job["prompt_id"] is not None
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_graph_without_reference_tokens_skips_upload_and_submits_unchanged() -> None:
+    """[REQ-427/AC-6] A graph without refimg tokens performs no upload and is submitted as before."""
+    service, repository, bridge = _new_service()
+    await service.start()
+    accepted = await service.accept(_payload())
+    await asyncio.sleep(0.05)
+    assert bridge.uploads == []
+    assert bridge.submissions == [{"id": "0"}]
+    assert repository.jobs[accepted["job_ids"][0]]["status"] == "submitting"
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_accept_rejects_missing_reference_with_422_and_commits_nothing() -> None:
+    """[REQ-427/AC-6] A token absent from the store is rejected at acceptance with 422 ref_image_not_found before any commit."""
+    service, repository, bridge = _new_service()
+    await service.start()
+    payload = _ref_payload(_load_graph("refimg:" + "a" * 64 + ".png"))
+    with pytest.raises(HTTPException) as caught:
+        await service.accept(payload)
+    assert caught.value.status_code == 422
+    assert _detail(caught.value)["code"] == "ref_image_not_found"
+    assert _detail(caught.value)["request_id"] == payload.request_id
+    assert repository.jobs == {}
+    await asyncio.sleep(0.05)
+    assert bridge.submissions == []
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-8")
+async def test_accept_touches_old_reference_and_rejects_after_gc_removal() -> None:
+    """[REQ-427/AC-8] Acceptance touches the original (protecting it from GC); a removed original yields 422 at acceptance."""
+    store = RefImageStore.default()
+    stored = store.save_bytes(_png_bytes())
+    original = store.root() / stored.ref_id
+    old = time.time() - 100 * 3600
+    os.utime(original, (old, old))
+    service, _repository, _bridge = _new_service()
+    await service.start()
+    accepted = await service.accept(_ref_payload(_load_graph(f"refimg:{stored.ref_id}")))
+    assert accepted["job_ids"]
+    assert abs(original.stat().st_mtime - time.time()) < 60
+
+    original.unlink()
+    with pytest.raises(HTTPException) as caught:
+        await service.accept(_ref_payload(_load_graph(f"refimg:{stored.ref_id}")))
+    assert caught.value.status_code == 422
+    assert _detail(caught.value)["code"] == "ref_image_not_found"
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_accept_replay_does_not_revalidate_references() -> None:
+    """[REQ-427/AC-6] A replayed request_id returns the existing acceptance even if the stored image has been removed."""
+    store = RefImageStore.default()
+    stored = store.save_bytes(_png_bytes())
+    service, repository, _bridge = _new_service()
+    payload = _ref_payload(_load_graph(f"refimg:{stored.ref_id}"))
+    first = await service.accept(payload)
+    (store.root() / stored.ref_id).unlink()
+    second = await service.accept(payload)
+    assert second == first
+    assert len(repository.jobs) == 1
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+@pytest.mark.parametrize("error", [TimeoutError("slow"), UpstreamResponseError("bad upload")])
+async def test_upload_failure_marks_job_failed_without_submit_or_retry(error: Exception) -> None:
+    """[REQ-427/AC-6] An upload failure fails the job (outcome failed) naming the ref_id, never submits, and is not retried."""
+    stored = RefImageStore.default().save_bytes(_png_bytes())
+    failing = FakeBridge()
+    failing.upload_error = error
+    service, repository, bridge = _new_service(failing)
+    await service.start()
+    accepted = await service.accept(_ref_payload(_load_graph(f"refimg:{stored.ref_id}")))
+    await asyncio.sleep(0.15)
+    job = repository.jobs[accepted["job_ids"][0]]
+    assert job["status"] == "failed"
+    assert job["failure"]["outcome"] == "failed"
+    assert stored.ref_id in job["failure"]["reason"]
+    assert bridge.submissions == []
+    assert len(bridge.uploads) == 1
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_reference_removed_between_accept_and_worker_fails_job() -> None:
+    """[REQ-427/AC-6] If the stored original disappears after acceptance, the job fails with a not-found reason and no submit."""
+    store = RefImageStore.default()
+    stored = store.save_bytes(_png_bytes())
+    service, repository, bridge = _new_service()
+    accepted = await service.accept(_ref_payload(_load_graph(f"refimg:{stored.ref_id}")))
+    (store.root() / stored.ref_id).unlink()
+    await service.start()
+    await asyncio.sleep(0.15)
+    job = repository.jobs[accepted["job_ids"][0]]
+    assert job["status"] == "failed"
+    assert "参照画像が見つかりません" in job["failure"]["reason"]
+    assert bridge.submissions == []
+    assert bridge.uploads == []
+    await service.stop()
+
+
+_VALID_TOKENS = st.tuples(
+    st.sampled_from(["png", "jpg", "webp"]),
+    st.text(alphabet="0123456789abcdef", min_size=64, max_size=64),
+).map(lambda parts: f"refimg:{parts[1]}.{parts[0]}")
+_MUTANT_TOKENS = st.one_of(
+    _VALID_TOKENS.map(lambda t: t + " "),
+    _VALID_TOKENS.map(lambda t: t.upper()),
+    _VALID_TOKENS.map(lambda t: "x " + t),
+    _VALID_TOKENS.map(lambda t: t + "\n"),
+    _VALID_TOKENS.map(lambda t: t.replace("refimg:", "refimg: ")),
+)
+_PLAIN_VALUES = st.one_of(
+    st.text(max_size=20),
+    st.integers(),
+    st.floats(allow_nan=False),
+    st.none(),
+    st.lists(st.one_of(st.text(max_size=5), st.integers()), max_size=3),
+)
+_GRAPHS = st.dictionaries(
+    st.text(alphabet="0123456789", min_size=1, max_size=3),
+    st.fixed_dictionaries(
+        {
+            "class_type": st.just("LoadImage"),
+            "inputs": st.dictionaries(
+                st.text(min_size=1, max_size=6), st.one_of(_PLAIN_VALUES, _VALID_TOKENS, _MUTANT_TOKENS), max_size=4
+            ),
+        },
+        optional={"_meta": st.fixed_dictionaries({"title": _VALID_TOKENS})},
+    ),
+    max_size=5,
+)
+
+
+def _expected_ref_id(value: Any) -> str | None:
+    """Independent oracle: exact token grammar written out without the production parser."""
+    if not isinstance(value, str) or not value.startswith("refimg:") or "." not in value:
+        return None
+    body = value[len("refimg:") :]
+    digest, _, ext = body.partition(".")
+    ok = len(digest) == 64 and all(c in "0123456789abcdef" for c in digest) and ext in {"png", "jpg", "webp"}
+    return body if ok else None
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+@hyp_settings(max_examples=100, deadline=None)
+@given(graph=_GRAPHS)
+def test_collect_and_replace_only_touch_exact_reference_tokens(graph: dict[str, Any]) -> None:
+    """[REQ-427/AC-6] collect_ref_ids returns only exact tokens; replace_ref_tokens swaps only those and never mutates its input."""
+    snapshot = copy.deepcopy(graph)
+    expected: list[str] = []
+    for node in graph.values():
+        for value in node["inputs"].values():
+            ref_id = _expected_ref_id(value)
+            if ref_id is not None and ref_id not in expected:
+                expected.append(ref_id)
+    ids = collect_ref_ids(graph)
+    assert ids == expected
+    resolved = {ref_id: f"sub/{ref_id}" for ref_id in ids}
+    replaced = replace_ref_tokens(graph, resolved)
+    assert graph == snapshot
+    for key, node in snapshot.items():
+        assert replaced[key]["class_type"] == node["class_type"]
+        assert replaced[key].get("_meta") == node.get("_meta")
+        for name, value in node["inputs"].items():
+            ref_id = _expected_ref_id(value)
+            assert replaced[key]["inputs"][name] == (resolved[ref_id] if ref_id else value)

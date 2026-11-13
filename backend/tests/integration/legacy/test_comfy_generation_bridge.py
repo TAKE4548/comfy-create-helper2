@@ -517,3 +517,71 @@ async def test_eager_full_webp_cache_on_executed_req362_ac3(tmp_path: Path) -> N
             # 保存されたファイルが有効な WebP であること
             with Image.open(fake_disk_path) as saved_img:
                 assert saved_img.format == "WEBP"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_upload_image_posts_multipart_to_input_subfolder_and_returns_reference() -> None:
+    """[REQ-427/AC-6] upload_image sends the original bytes as multipart to /upload/image and returns name/subfolder/type."""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"name": "abc.png", "subfolder": "prompt_surgeon_ref", "type": "input"})
+
+    bridge = _http_bridge(handler)
+    try:
+        result = await bridge.upload_image(b"\x89PNG-bytes", "abc.png", "image/png")
+    finally:
+        await bridge.stop()
+
+    assert result == {"name": "abc.png", "subfolder": "prompt_surgeon_ref", "type": "input"}
+    assert len(calls) == 1
+    request = calls[0]
+    assert request.method == "POST"
+    assert request.url.path == "/upload/image"
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    body = request.content
+    assert b'name="image"; filename="abc.png"' in body
+    assert b"Content-Type: image/png" in body
+    assert b"\x89PNG-bytes" in body
+    for field, value in (("type", b"input"), ("overwrite", b"true"), ("subfolder", b"prompt_surgeon_ref")):
+        assert b'name="%s"\r\n\r\n%s\r\n' % (field.encode(), value) in body
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"subfolder": "x", "type": "input"}),
+        httpx.Response(200, json={"name": 5, "subfolder": "x", "type": "input"}),
+        httpx.Response(200, json={"name": "", "subfolder": "x", "type": "input"}),
+        httpx.Response(200, content=b"not json"),
+        httpx.Response(200, json=["name"]),
+    ],
+)
+async def test_upload_image_rejects_malformed_upstream_responses(response: httpx.Response) -> None:
+    """[REQ-427/AC-6] A missing/non-str name, non-JSON or non-dict upload response raises UpstreamResponseError."""
+    bridge = _http_bridge(lambda request: response)
+    try:
+        with pytest.raises(UpstreamResponseError):
+            await bridge.upload_image(b"data", "a.png", "image/png")
+    finally:
+        await bridge.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-6")
+async def test_upload_image_http_failure_propagates_and_marks_upstream_not_ready() -> None:
+    """[REQ-427/AC-6] An HTTP 500 on upload propagates HTTPStatusError and flips http_ready to False."""
+    bridge = _http_bridge(lambda request: httpx.Response(500, json={}))
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            await bridge.upload_image(b"data", "a.png", "image/png")
+        assert bridge.get_upstream_state()["http_ready"] is False
+    finally:
+        await bridge.stop()

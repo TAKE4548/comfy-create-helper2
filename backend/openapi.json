@@ -8115,6 +8115,168 @@
         }
       }
     },
+    "/api/ref-images/upload": {
+      "post": {
+        "tags": [
+          "ref-images"
+        ],
+        "summary": "Upload Ref Image",
+        "operationId": "upload_ref_image_api_ref_images_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_ref_image_api_ref_images_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefImageRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ref-images/import": {
+      "post": {
+        "tags": [
+          "ref-images"
+        ],
+        "summary": "Import Ref Image",
+        "operationId": "import_ref_image_api_ref_images_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefImageImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefImageRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ref-images/{ref_id}/thumbnail": {
+      "get": {
+        "tags": [
+          "ref-images"
+        ],
+        "summary": "Get Ref Image Thumbnail",
+        "operationId": "get_ref_image_thumbnail_api_ref_images__ref_id__thumbnail_get",
+        "parameters": [
+          {
+            "name": "ref_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ref Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ref-images/{ref_id}": {
+      "get": {
+        "tags": [
+          "ref-images"
+        ],
+        "summary": "Get Ref Image",
+        "operationId": "get_ref_image_api_ref_images__ref_id__get",
+        "parameters": [
+          {
+            "name": "ref_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ref Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -9015,6 +9177,20 @@
         },
         "type": "object",
         "title": "BindingRuleSetUpdate"
+      },
+      "Body_upload_ref_image_api_ref_images_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_ref_image_api_ref_images_upload_post"
       },
       "Body_upload_snapshot_image_api_snapshots_upload_post": {
         "properties": {
@@ -13411,6 +13587,108 @@
           "roi"
         ],
         "title": "ROIRequest"
+      },
+      "RefImageImportRequest": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "history",
+              "snapshot"
+            ],
+            "title": "Source"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "subfolder": {
+            "type": "string",
+            "title": "Subfolder",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "output",
+              "temp"
+            ],
+            "title": "Type",
+            "default": "output"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "RefImageImportRequest"
+      },
+      "RefImageRead": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "ref_id": {
+            "type": "string",
+            "title": "Ref Id"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          },
+          "view_url": {
+            "type": "string",
+            "title": "View Url"
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "title": "Thumbnail Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "ref_id",
+          "media_type",
+          "width",
+          "height",
+          "byte_size",
+          "view_url",
+          "thumbnail_url"
+        ],
+        "title": "RefImageRead"
       },
       "ReleaseOperation": {
         "properties": {

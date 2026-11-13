@@ -8,6 +8,7 @@ tags:
   - REQ-365
   - REQ-380
   - REQ-381
+  - REQ-427
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
   - docs/backlog/task/archive/REQ-334-T10.md
@@ -40,15 +41,19 @@ related_paths:
   - frontend/src/pages/SettingsPage/components/LlmSettingsSection.tsx
   - frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx
   - frontend/src/pages/SettingsPage/components/BubbleDetectionSection.tsx
+  - docs/backlog/pbi/archive/REQ-427.md
+  - docs/design/REQ-427.md
+  - backend/app/seed_data.py
+  - backend/app/seeder.py
 ---
 
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 3.1
-**最終更新**: 2026-10-24
+**バージョン**: 3.2
+**最終更新**: 2026-11-14
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md) / [REQ-380設計](../design/REQ-380.md) / [REQ-381設計](../design/REQ-381.md) / [REQ-381文書設計](../design/REQ-381-document-design.md) / [REQ-381検証計画](../design/REQ-381-test-plan.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md) / [REQ-380設計](../design/REQ-380.md) / [REQ-381設計](../design/REQ-381.md) / [REQ-381文書設計](../design/REQ-381-document-design.md) / [REQ-381検証計画](../design/REQ-381-test-plan.md) / [REQ-427設計](../design/REQ-427.md)
 
 ---
 
@@ -236,6 +241,10 @@ Settings配線のステージ表示は、各ステージの有効 Variant の No
 workflow JSON version 1では `mapping_slot_states` をoptionalで扱う。importで省略された場合は既存stateを保ち、明示 `{}` は空snapshotとして置換し、`null`や不正形式は拒否する。workflow copy、history、rollbackは対応状態をmappingと一緒に保存・復元する。既存workflow JSONにfieldがない場合は従来slotを有効として扱う。
 
 標準の `input_type: 'seed'` は32bit unsigned Seed専用の入力型であり、`ParamTypeMaster.widget_type` に追加するカスタム型ではない。値は既存のrole別パラメータ保存領域に10進文字列として保存し、固定値またはランダムの選択モードはmaster/variantの安定したslot単位の予約JSONメタデータに保存する。Seed型の割当・編集はMappingMasterの既存操作を使い、手動の型変更を除き、データベースmigrationや自動移行は行わない。既存のmappingとlegacy global Seedの保存・動作は維持する。
+
+標準の `input_type: 'image'`（参照画像、REQ-427）も `seed` と同じく標準の入力型であり、`ParamTypeMaster.widget_type` には追加しない。MappingMaster の作成・編集画面では「画像 (参照画像)」として選択・保存でき、保存後の再読込でも保持される。`mapping_masters.input_type` は自由文字列列のため、DB スキーマ変更と migration は不要である。値は参照トークン文字列 `refimg:<sha256>.<png|jpg|webp>` として、既存の role 別パラメータ保存領域（プリセット値、Multi-Set、生成記録、Snapshot.params）へそのまま保存する。トークンの形式と実体の保存は [SPEC_GENERATE §6-4](./SPEC_GENERATE.md) を参照する。
+
+初期マスタ `ref_image`（表示名 `Reference Image`、`input_type: 'image'`、`default_enabled` は省略時の既定 true）は起動時の冪等 seeder で投入される。初期 RuleSet は `LoadImage` × `image`（priority 1）の Entry を1件持ち、main Variant を1件作る。NodeSelector は既定タイトル（`RefImage` / `Ref_Image` / `ReferenceImage`）の exact パターンを持つが、判定はタイトル不一致を除外せず（判定段階 3）、既定タイトル `Load Image` の `LoadImage` ノードも候補になる。同じ role の Variant が既に別 Master にある場合は、起動を失敗させず、その seed 項目の Master と Variant の作成をスキップして warning を出す。用途別の参照画像ロールは、`input_type: 'image'` の Master を Settings で追加して増やす。`LoadImage` 以外のクラス（例: `LoadImageMask`）は初期 RuleSet に含まれず、RuleSet 編集で追加する。
 
 ### 4-2. BaseModel & CheckpointMapping
 

@@ -1532,3 +1532,194 @@ def test_copy_workflow_with_resolved_and_null_master_sync_groups(
     assert copied_groups[1].master_variant_id == v_master.id
     assert [m.variant_id for m in copied_groups[1].members] == [v_slave.id]
 
+
+
+_REF_IMAGE_SCAN_NODE = {
+    "class_type": "LoadImage",
+    "inputs": {"image": "example.png", "upload": "image"},
+    "_meta": {"title": "Load Image"},
+}
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-1")
+def test_mapping_master_image_input_type_persists_on_create(client: TestClient, db_session: Session) -> None:
+    """[REQ-427/AC-1] POST /api/mapping-masters keeps input_type 'image' on create, GET and list."""
+    before = db_session.query(models.ParamTypeMaster).count()
+    res = client.post(
+        "/api/mapping-masters",
+        json={
+            "base_key": "img_input_probe",
+            "name": "Image Probe",
+            "param_name": "image",
+            "input_type": "image",
+            "expected_class_types": ["LoadImage"],
+        },
+    )
+    assert res.status_code == 201, res.text
+    master_id = res.json()["id"]
+    got = client.get(f"/api/mapping-masters/{master_id}")
+    assert got.status_code == 200, got.text
+    assert got.json()["input_type"] == "image"
+    listed = client.get("/api/mapping-masters")
+    assert listed.status_code == 200, listed.text
+    assert next(m for m in listed.json() if m["id"] == master_id)["input_type"] == "image"
+    assert db_session.query(models.ParamTypeMaster).count() == before
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-1")
+def test_mapping_master_input_type_updates_to_image(client: TestClient, db_session: Session) -> None:
+    """[REQ-427/AC-1] PUT /api/mapping-masters/{id} changes a textarea master to 'image' and GET returns it."""
+    created = client.post(
+        "/api/mapping-masters",
+        json={"base_key": "img_update_probe", "name": "Update Probe", "param_name": "text", "input_type": "textarea"},
+    )
+    assert created.status_code == 201, created.text
+    master_id = created.json()["id"]
+    assert created.json()["input_type"] == "textarea"
+    put = client.put(f"/api/mapping-masters/{master_id}", json={"input_type": "image"})
+    assert put.status_code == 200, put.text
+    got = client.get(f"/api/mapping-masters/{master_id}")
+    assert got.status_code == 200, got.text
+    assert got.json()["input_type"] == "image"
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_seed_defines_ref_image_master_variant_and_ruleset(db_session: Session) -> None:
+    """[REQ-427/AC-2] seed_initial_data defines ref_image master (image), main variant and LoadImage x image rule."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+
+    master = db_session.query(models.MappingMaster).filter(models.MappingMaster.base_key == "ref_image").one()
+    assert master.input_type == "image"
+    main_stage = db_session.query(models.StageMaster).filter(models.StageMaster.key == "main").one()
+    variant = db_session.query(models.MappingVariant).filter(
+        models.MappingVariant.master_id == master.id,
+        models.MappingVariant.stage_id == main_stage.id,
+    ).one()
+    assert variant.role == "ref_image"
+    entries = db_session.query(models.BindingRuleEntry).filter(
+        models.BindingRuleEntry.rule_set_id == variant.binding_rule_set_id
+    ).all()
+    assert [(e.class_type, e.param_name, e.priority) for e in entries] == [("LoadImage", "image", 1)]
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_seed_ref_image_is_idempotent(db_session: Session) -> None:
+    """[REQ-427/AC-2] Calling seed_initial_data twice keeps exactly one ref_image master, ruleset and variant."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    seed_initial_data(db_session)
+
+    masters = db_session.query(models.MappingMaster).filter(models.MappingMaster.base_key == "ref_image").all()
+    assert len(masters) == 1
+    assert db_session.query(models.MappingVariant).filter(models.MappingVariant.role == "ref_image").count() == 1
+    assert db_session.query(models.BindingRuleSet).filter(
+        models.BindingRuleSet.name == "Reference Image Rules"
+    ).count() == 1
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_scan_detects_load_image_as_ref_image(client: TestClient, db_session: Session) -> None:
+    """[REQ-427/AC-2] POST /api/workflows/scan matches a LoadImage node as role ref_image on input 'image'."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    db_session.commit()
+
+    res = client.post("/api/workflows/scan", json={"json_body": {"10": _REF_IMAGE_SCAN_NODE}})
+    assert res.status_code == 200, res.text
+    matched = [m for m in res.json()["matched"] if m["role"] == "ref_image"]
+    assert len(matched) == 1
+    assert matched[0]["node_id"] == "10"
+    assert matched[0]["input_name"] == "image"
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_scan_reports_duplicated_load_image_with_min_node(client: TestClient, db_session: Session) -> None:
+    """[REQ-427/AC-2] Two LoadImage nodes: smallest id is matched and a duplicated warning lists both node ids."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    db_session.commit()
+
+    body = {"10": _REF_IMAGE_SCAN_NODE, "12": _REF_IMAGE_SCAN_NODE}
+    res = client.post("/api/workflows/scan", json={"json_body": body})
+    assert res.status_code == 200, res.text
+    data = res.json()
+    matched = [m for m in data["matched"] if m["role"] == "ref_image"]
+    assert len(matched) == 1
+    assert matched[0]["node_id"] == "10"
+    dup = [w for w in data["warnings"] if w.get("status") == "duplicated" and "10" in w.get("node_ids", [])]
+    assert dup, data["warnings"]
+    assert set(dup[0]["node_ids"]) == {"10", "12"}
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_scan_result_saves_as_workflow_with_ref_image_mapping(client: TestClient, db_session: Session) -> None:
+    """[REQ-427/AC-2] A scanned LoadImage candidate is saved via POST /api/workflows and returned as ref_image/image."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    db_session.commit()
+
+    body = {"10": _REF_IMAGE_SCAN_NODE}
+    scan = client.post("/api/workflows/scan", json={"json_body": body})
+    assert scan.status_code == 200, scan.text
+    cand = next(m for m in scan.json()["matched"] if m["role"] == "ref_image")
+    wf_id = _create_workflow(
+        client,
+        "Ref Image Workflow",
+        [{
+            "master_id": cand["master_id"],
+            "variant_id": cand["variant_id"],
+            "node_id": cand["node_id"],
+            "input_name": cand["input_name"],
+        }],
+        json_body=body,
+    )
+    got = client.get(f"/api/workflows/{wf_id}")
+    assert got.status_code == 200, got.text
+    mapping = next(m for m in got.json()["mappings"] if m["role"] == "ref_image")
+    assert mapping["input_type"] == "image"
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-2")
+def test_seed_skips_ref_image_when_role_used_by_other_master_variant(
+    db_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[REQ-427/AC-2] seed_initial_data tolerates a ref_image role owned by another master's variant."""
+    import logging
+    from app.seeder import seed_initial_data
+
+    seed_initial_data(db_session)
+    db_session.query(models.MappingVariant).filter(models.MappingVariant.role == "ref_image").delete()
+    db_session.query(models.MappingMaster).filter(models.MappingMaster.base_key == "ref_image").delete()
+    db_session.flush()
+
+    stage = db_session.query(models.StageMaster).filter(models.StageMaster.key == "main").one()
+    rule_set = db_session.query(models.BindingRuleSet).first()
+    assert rule_set is not None
+    other = models.MappingMaster(
+        base_key="other_master", name="Other", display_name="Other", param_name="image", input_type="image"
+    )
+    db_session.add(other)
+    db_session.flush()
+    squatter = models.MappingVariant(
+        master_id=other.id, stage_id=stage.id, role="ref_image", binding_rule_set_id=rule_set.id
+    )
+    db_session.add(squatter)
+    db_session.flush()
+    squatter_id, other_id = squatter.id, other.id
+
+    with caplog.at_level(logging.WARNING):
+        seed_initial_data(db_session)
+
+    assert any("ref_image" in r.message and r.levelno == logging.WARNING for r in caplog.records)
+    variants = db_session.query(models.MappingVariant).filter(models.MappingVariant.role == "ref_image").all()
+    assert [(v.id, v.master_id) for v in variants] == [(squatter_id, other_id)]
+    assert db_session.query(models.MappingMaster).filter(models.MappingMaster.base_key == "ref_image").count() == 0

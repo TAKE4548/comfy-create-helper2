@@ -191,6 +191,14 @@ MAPPING_MASTER_SEEDS = [
         "display_name": "FaceDetailer Denoise",
         "title_patterns": ["FaceDetailer", "FDetailer_denoise"],
     },
+    {
+        "role": "ref_image",
+        "expected_class_types": ["LoadImage"],
+        "param_name": "image",
+        "input_type": "image",
+        "display_name": "Reference Image",
+        "title_patterns": ["RefImage", "Ref_Image", "ReferenceImage"],
+    },
 ]
 
 LLM_PROMPT_SEEDS = [

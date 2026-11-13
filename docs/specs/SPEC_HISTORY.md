@@ -1,10 +1,10 @@
 # Prompt Surgeon — History ページ仕様書 (SPEC_HISTORY)
 
-**バージョン**: 2.4
-**最終更新**: 2026-10-10
+**バージョン**: 2.5
+**最終更新**: 2026-11-14
 **実装ファイル**: `frontend/src/pages/HistoryPage.tsx`（`AlbumListView`, `AlbumDetailView`, `hooks` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-427設計](../design/REQ-427.md)
 
 ---
 
@@ -60,6 +60,7 @@
 - 画像の拡大表示 & パラメータ整形表示
 - **LoRA Stack の自動検出・テーブル表示**: フラットキー（`${role}_lora_count`, `${role}_lora_name_X` 等）を自動解析してグループ表示。
 - **完全全画面プレビュー (REQ-078)**: 3秒操作なしでオーバーレイ自動非表示、Esc/✕/再タップでモーダルと同期クローズ。
+- **参照画像（ref画像）トークン（REQ-427）**: `image` 型の値は参照トークン文字列（`refimg:<sha256>.<png|jpg|webp>`）として、Snapshot の `params` と生成記録に含まれ得る。他の保存値と同じく文字列として保存され、Generate へ復元したときはトークンをそのまま入力値へ戻す（表示は [SPEC_GENERATE](./SPEC_GENERATE.md) §2-5、§6-4 を参照）。Snapshot および生成履歴から参照されている画像は、参照画像ストアの自動クリーンアップで削除されない（[SPEC_GENERATE §6-4](./SPEC_GENERATE.md)）。この仕様は Snapshot 本体・`params` の保存内容を変更しない。
 
 #### REQ-316 生成画像メタ情報と現在タグ関連
 - `HistoryModalPreview` の情報表示は画像とメタ情報を並列に示し、Workflow/Workflow ID、Prompt ID、キュー受付・メタ情報保存・生成完了・画像保存時刻、現在のアルバム所属を区別して表示する。生成完了時刻はversion1 recordのoptional `completed_at`の実記録を使い、記録や対応する成功jobの実日時がないものは未記録とする。Snapshotは自身の保存済みrecordを正本とし、Snapshot作成時刻で生成完了時刻を代用しない。

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { ProfileBulkEditModal, computeCommonTags, computeCommonLoras } from '../ProfileBulkEditModal';
@@ -1100,3 +1100,123 @@ describe('ProfileBulkEditModal Component', () => {
   });
 });
 
+
+describe('ProfileBulkEditModal image role (REQ-427)', () => {
+  const idOf = (c: string) => `${c.repeat(64)}.png`;
+  const tokenOf = (c: string) => `refimg:${idOf(c)}`;
+  const readOf = (c: string) => ({ ref_id: idOf(c), token: tokenOf(c), width: 1, height: 1, size_bytes: 1 });
+  const jsonRes = (status: number, body: unknown) => {
+    const text = JSON.stringify(body);
+    return { ok: status >= 200 && status < 300, status, text: async () => text, json: async () => body };
+  };
+  const png = () => new File([new Uint8Array([1, 2, 3])], 'a.png', { type: 'image/png' });
+
+  const presets: WorkflowPreset[] = [
+    { id: 1, name: 'P1', workflow_id: 1, display_order: 1, is_default: false, param_values: { steps: '20' } },
+    { id: 2, name: 'P2', workflow_id: 1, display_order: 2, is_default: false, param_values: { steps: '25' } },
+  ];
+  const mappings: MappingMaster[] = [
+    { id: 1, workflow_id: 1, role: 'steps', display_name: 'Steps', input_type: 'int', is_required: false, is_hidden: false, display_order: 1 },
+    { id: 2, workflow_id: 1, role: 'ref_image', display_name: 'Reference Image', input_type: 'image', is_required: false, is_hidden: false, display_order: 2 },
+  ];
+
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const originalFetch = global.fetch;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    vi.spyOn(lorasApi, 'getComfyModels').mockResolvedValue([] as any);
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  const mount = (onApply = vi.fn(), onClose = vi.fn()) => {
+    renderWithClient(
+      <ProfileBulkEditModal isOpen={true} onClose={onClose} selectedPresets={presets} mappingMasters={mappings} loras={[]} onApply={onApply} />
+    );
+    fireEvent.click(screen.getByText('パラメータ'));
+    return { onApply, onClose };
+  };
+  const field = () => screen.getByTestId('image-param-bulk-ref_image');
+  const fileInput = () => field().querySelector('input[type=file]') as HTMLInputElement;
+  const upload = async (c: string) => {
+    fetchMock.mockResolvedValueOnce(jsonRes(201, readOf(c)));
+    fireEvent.change(fileInput(), { target: { files: [png()] } });
+    await waitFor(() => expect(screen.getByAltText('選択中の参照画像')).toBeInTheDocument());
+  };
+
+  it('[REQ-427/AC-3] image role renders as ImageParamField (2 buttons + placeholder), not a text input', () => {
+    mount();
+    expect(field()).toBeInTheDocument();
+    expect(field().querySelectorAll('button')).toHaveLength(2);
+    expect(field().textContent).toContain('未指定');
+    // only the int role (Steps) uses the text input
+    expect(screen.getAllByPlaceholderText('値を入力')).toHaveLength(1);
+  });
+
+  it('[REQ-427/AC-3] field buttons are disabled when unchecked and enabled when checked', () => {
+    mount();
+    const buttons = () => Array.from(field().querySelectorAll('button'));
+    expect(buttons().every((b) => b.disabled)).toBe(true);
+    fireEvent.click(screen.getByLabelText('Reference Image'));
+    expect(buttons().every((b) => !b.disabled)).toBe(true);
+  });
+
+  it('[REQ-427/AC-5] checked + uploaded image is applied as the token in paramPatch', async () => {
+    const { onApply } = mount();
+    fireEvent.click(screen.getByLabelText('Reference Image'));
+    await upload('a');
+    expect(screen.getByAltText('選択中の参照画像').getAttribute('src')).toBe(`/api/ref-images/${idOf('a')}/thumbnail`);
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(onApply.mock.calls[0][0].paramPatch).toEqual({ ref_image: tokenOf('a') });
+  });
+
+  it('[REQ-427/AC-5] checked without a selected image leaves ref_image out of the payload', async () => {
+    const { onApply } = mount();
+    fireEvent.click(screen.getByLabelText('Reference Image'));
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: '適用する' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Steps'));
+    fireEvent.change(screen.getByPlaceholderText('値を入力'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(onApply.mock.calls[0][0].paramPatch).toEqual({ steps: '30' });
+  });
+
+  it('[REQ-427/AC-5] a failed second upload keeps the previous thumbnail and token', async () => {
+    const { onApply } = mount();
+    fireEvent.click(screen.getByLabelText('Reference Image'));
+    await upload('a');
+    fetchMock.mockResolvedValueOnce(jsonRes(500, { detail: 'boom' }));
+    fireEvent.change(fileInput(), { target: { files: [png()] } });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByAltText('選択中の参照画像').getAttribute('src')).toContain(idOf('a'));
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(onApply.mock.calls[0][0].paramPatch).toEqual({ ref_image: tokenOf('a') });
+  });
+
+  it('[REQ-427/AC-4] Escape while the picker is open closes only the picker; afterwards it closes the modal', async () => {
+    fetchMock.mockResolvedValue(jsonRes(200, []));
+    const { onClose } = mount();
+    fireEvent.click(screen.getByLabelText('Reference Image'));
+    fireEvent.click(screen.getByRole('button', { name: '履歴/スナップショットから選択' }));
+    expect(await screen.findByRole('dialog', { name: '参照画像を選択' })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '参照画像を選択' })).not.toBeInTheDocument());
+    expect(screen.getByText('プロファイル一括編集')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

@@ -54,6 +54,7 @@ const DEFAULT_INPUT_TYPES = [
   { id: 'int', name: 'int' },
   { id: 'float', name: 'float' },
   { id: 'seed', name: 'Seed (ランダム / 固定)' },
+  { id: 'image', name: '画像 (参照画像)' },
   { id: 'select', name: 'select' },
   { id: 'lora_stack', name: 'lora_stack' },
   { id: 'select_sampler', name: 'select_sampler' },

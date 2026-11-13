@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from app.utils.windows_loop_defense import apply_windows_loop_defense
@@ -40,6 +41,7 @@ from app.routers import (
     benchmark_router,
     training_router,
     prompt_templates,
+    ref_images,
 )
 
 from app.routers import ws as ws_router
@@ -48,6 +50,8 @@ from app.services.resource_monitor import resource_monitor
 from app.services.comfy_generation_bridge import ComfyGenerationBridge
 from app.services.generation_repository import GenerationRepository
 from app.services.generation_service import GenerationService
+from app.services.ref_image_gc import gc_loop
+from app.services.ref_image_store import RefImageStore
 
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
@@ -85,6 +89,7 @@ async def lifespan(app: FastAPI):
     app.state.generation_bridge = bridge
     app.state.generation_service = service
     ws_router.manager.configure_generation(service.snapshot, service.reconcile)
+    gc_task: asyncio.Task[None] | None = None
     monitor_started = False
     bridge_started = False
     service_started = False
@@ -96,8 +101,17 @@ async def lifespan(app: FastAPI):
         await service.start()
         monitor_started = True
         await resource_monitor.start(ws_router.manager.broadcast)
+        gc_task = asyncio.create_task(gc_loop(RefImageStore.default(), engine.connect), name="ref-image-gc")
         yield
     finally:
+        if gc_task is not None:
+            gc_task.cancel()
+            try:
+                await gc_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Ref image GC task ended with error: {e}")
         if monitor_started:
             await resource_monitor.stop()
         if bridge_started:
@@ -199,6 +213,7 @@ app.include_router(generation_router.router)
 app.include_router(dataset_router.router)
 app.include_router(benchmark_router.router)
 app.include_router(training_router.router)
+app.include_router(ref_images.router)
 
 
 class CachedStaticFiles(StaticFiles):

@@ -7,6 +7,7 @@ import type { components } from './schema'
 import type { BubbleShapeType, MangaTextEffectConfig, TextOrientation } from '../types/speechBubble'
 
 export type Schema<T extends keyof components['schemas']> = components['schemas'][T]
+export type RefImageRead = Schema<'RefImageRead'>
 
 // --- MappingMaster API Types ---
 export type MappingMasterV2 = Omit<
@@ -33,7 +34,7 @@ export interface MappingMaster {
   role: string
   expected_class_types: string[] | null
   param_name: string
-  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean'
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean' | 'image'
   display_name: string
   title_patterns: string[] | null
   sort_order: number

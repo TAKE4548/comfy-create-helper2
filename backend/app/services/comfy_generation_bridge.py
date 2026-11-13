@@ -108,6 +108,33 @@ class ComfyGenerationBridge:
             return self._submit_rejection(response)
         raise UpstreamResponseError("ComfyUI prompt response did not confirm prompt_id")
 
+    async def upload_image(
+        self, data: bytes, filename: str, media_type: str, *, subfolder: str = "prompt_surgeon_ref"
+    ) -> dict[str, str]:
+        response = await self._request(
+            "POST",
+            "/upload/image",
+            files={"image": (filename, data, media_type)},
+            data={"type": "input", "subfolder": subfolder, "overwrite": "true"},
+            timeout=30.0,
+        )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise UpstreamResponseError("ComfyUI upload response was not valid JSON") from exc
+        if not isinstance(body, dict):
+            raise UpstreamResponseError("ComfyUI upload response was not an object")
+        name = body.get("name")
+        if not isinstance(name, str) or not name:
+            raise UpstreamResponseError("ComfyUI upload response did not include a file name")
+        returned_subfolder = body.get("subfolder")
+        returned_type = body.get("type")
+        return {
+            "name": name,
+            "subfolder": returned_subfolder if isinstance(returned_subfolder, str) else "",
+            "type": returned_type if isinstance(returned_type, str) else "input",
+        }
+
     @staticmethod
     def _submit_rejection(response: httpx.Response) -> dict[str, Any]:
         node_errors: Any = None

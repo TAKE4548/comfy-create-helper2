@@ -4,6 +4,7 @@ import type { MappingMaster, ParamTypeMaster, Lora, WorkflowPreset } from '../..
 import type { CommonLoraOp, PresetLoraSlot } from '../../types';
 import { LoraStackSection } from './LoraStackSection';
 import { ParamFieldControl } from './ParamFieldControl';
+import { ImageParamSection } from './ImageParamSection';
 import { BatchSizeSection } from './BatchSizeSection';
 
 export interface ParamBulkEditTabProps {
@@ -28,6 +29,7 @@ export interface ParamBulkEditTabProps {
   setBatchSizeEnabled: (val: boolean) => void;
   batchSizeInput: string;
   setBatchSizeInput: (val: string) => void;
+  onImagePickerOpenChange?: (open: boolean) => void;
 }
 
 export const ParamBulkEditTab: React.FC<ParamBulkEditTabProps> = ({
@@ -52,6 +54,7 @@ export const ParamBulkEditTab: React.FC<ParamBulkEditTabProps> = ({
   setBatchSizeEnabled,
   batchSizeInput,
   setBatchSizeInput,
+  onImagePickerOpenChange,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -127,6 +130,20 @@ export const ParamBulkEditTab: React.FC<ParamBulkEditTabProps> = ({
               setCommonLoraOps={setCommonLoraOps}
               addLoraSlots={addLoraSlots}
               setAddLoraSlots={setAddLoraSlots}
+            />
+          );
+        }
+
+        if (m.input_type === 'image') {
+          return (
+            <ImageParamSection
+              key={m.role}
+              mapping={m}
+              isEnabled={isEnabled}
+              onToggleEnabled={() => toggleParamEnabled(m.role)}
+              paramPatch={paramPatch}
+              setParamPatch={setParamPatch}
+              onPickerOpenChange={onImagePickerOpenChange}
             />
           );
         }

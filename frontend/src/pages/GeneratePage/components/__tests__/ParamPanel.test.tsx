@@ -3,6 +3,9 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ParamPanel } from '../ParamPanel'
 import { LS_KEYS } from '../../../../utils/localStorageKeys'
+import { generationWorkflow } from '../../../../utils/workflowMappingState'
+import { resetTestStore } from '../../../../test/utils/storeHelpers'
+import { createTestQueryClient } from '../../../../test/utils/queryHelpers'
 
 describe('ParamPanel Component - Section Collapse / Expand', () => {
   beforeEach(() => {
@@ -339,5 +342,84 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     const input = container.querySelector('#param-mobile-Sampler_Steps')
     expect(input).toHaveClass('w-20')
     expect(input?.parentElement).toHaveClass('shrink-0')
+  })
+})
+
+describe('ParamPanel image input (REQ-427)', () => {
+  const idOf = (c: string) => `${c.repeat(64)}.png`
+  const tokenOf = (c: string) => `refimg:${idOf(c)}`
+  const imageMapping = { id: 11, role: 'ref_image', display_name: 'Reference Image', input_type: 'image', master_id: 5, variant_id: null }
+  const base = {
+    paramMappings: [imageMapping] as any[],
+    paramValues: {} as Record<string, string>,
+    setParamValues: vi.fn(),
+  }
+  const wrap = (ui: React.ReactElement) => (
+    <QueryClientProvider client={createTestQueryClient()}>{ui}</QueryClientProvider>
+  )
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    resetTestStore()
+  })
+
+  it('[REQ-427/AC-3] desktop shows label, two buttons, placeholder; token value shows thumbnail', () => {
+    const { rerender } = render(wrap(<ParamPanel {...base} />))
+    expect(screen.getByText('Reference Image')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '履歴/スナップショットから選択' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'アップロード' })).toBeInTheDocument()
+    expect(screen.getByText('未指定')).toBeInTheDocument()
+    rerender(wrap(<ParamPanel {...base} paramValues={{ ref_image: tokenOf('a') }} />))
+    expect(screen.getByAltText('選択中の参照画像').getAttribute('src')).toBe(`/api/ref-images/${idOf('a')}/thumbnail`)
+  })
+
+  it('[REQ-427/AC-3] mobile shows same elements with 44px and touch-manipulation classes', () => {
+    render(wrap(<ParamPanel {...base} mobile />))
+    expect(screen.getByText('Reference Image')).toBeInTheDocument()
+    const field = screen.getByTestId('image-param-ref_image')
+    const btns = field.querySelectorAll('button')
+    expect(btns.length).toBe(2)
+    btns.forEach((b) => {
+      expect(b.className).toMatch(/min-h-11|before:-inset-2/)
+      expect(b.className).toContain('touch-manipulation')
+    })
+  })
+
+  it('[REQ-427/AC-7] image field is hidden when its mapping slot is disabled and shown when enabled', () => {
+    const raw = (state: boolean) => ({
+      mappings: [imageMapping, { id: 12, role: 'cfg', display_name: 'CFG', input_type: 'float', master_id: 6, variant_id: null }],
+      mapping_slot_states: { 'm:5': state },
+    })
+    const off = generationWorkflow(raw(false) as never, [])
+    const { rerender } = render(wrap(<ParamPanel {...base} paramMappings={off.mappings as any[]} />))
+    expect(screen.queryByTestId('image-param-ref_image')).not.toBeInTheDocument()
+    expect(screen.getByText('CFG')).toBeInTheDocument()
+    const on = generationWorkflow(raw(true) as never, [])
+    rerender(wrap(<ParamPanel {...base} paramMappings={on.mappings as any[]} />))
+    expect(screen.getByTestId('image-param-ref_image')).toBeInTheDocument()
+  })
+
+  it('[REQ-427/AC-8] thumbnail follows paramValues change', () => {
+    const { rerender } = render(wrap(<ParamPanel {...base} paramValues={{ ref_image: tokenOf('a') }} />))
+    expect(screen.getByAltText('選択中の参照画像').getAttribute('src')).toContain(idOf('a'))
+    rerender(wrap(<ParamPanel {...base} paramValues={{ ref_image: tokenOf('b') }} />))
+    expect(screen.getByAltText('選択中の参照画像').getAttribute('src')).toContain(idOf('b'))
+  })
+
+  it('[REQ-427/AC-8] thumbnail load error shows fallback text and keeps the value', () => {
+    const setParamValues = vi.fn()
+    render(wrap(<ParamPanel {...base} setParamValues={setParamValues} paramValues={{ ref_image: tokenOf('a') }} />))
+    fireEvent.error(screen.getByAltText('選択中の参照画像'))
+    expect(screen.getByText('プレビューを表示できません')).toBeInTheDocument()
+    expect(setParamValues).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-427/AC-3] ParamSync slave image role is disabled', () => {
+    render(wrap(<ParamPanel {...base}
+      paramMappings={[imageMapping, { id: 13, role: 'ref_master', display_name: 'M', input_type: 'image' }]}
+      paramSyncGroups={[{ id: 1, workflow_id: 1, name: 'G', is_enabled: true, master_role: 'ref_master', slave_roles: ['ref_image'], created_at: '2026-01-01T00:00:00Z' }]} />))
+    const field = screen.getByTestId('image-param-ref_image')
+    field.querySelectorAll('button').forEach((b) => expect(b).toBeDisabled())
   })
 })

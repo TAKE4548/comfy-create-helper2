@@ -95,6 +95,15 @@ def _seed_mapping_masters(db) -> None:
             group_id = groups_map.get("etc")
 
         if not existing:
+            role_taken = db.query(models.MappingVariant).filter(
+                models.MappingVariant.role == role
+            ).first()
+            if role_taken is not None:
+                logger.warning(
+                    f"Skip seeding mapping master '{role}': role already used by variant "
+                    f"id={role_taken.id} of another master"
+                )
+                continue
             master = models.MappingMaster(
                 group_id=group_id,
                 base_key=role,
@@ -164,7 +173,18 @@ def _seed_mapping_masters(db) -> None:
                 models.MappingVariant.master_id == master.id,
                 models.MappingVariant.stage_id == main_stage.id,
             ).first()
+            role_conflict = None
             if not variant:
+                role_conflict = db.query(models.MappingVariant).filter(
+                    models.MappingVariant.role == role,
+                    models.MappingVariant.master_id != master.id,
+                ).first()
+            if not variant and role_conflict is not None:
+                logger.warning(
+                    f"Skip default main variant for master '{master.base_key}': role '{role}' "
+                    f"already used by variant id={role_conflict.id} of another master"
+                )
+            elif not variant:
                 db.add(models.MappingVariant(
                     master_id=master.id,
                     stage_id=main_stage.id,

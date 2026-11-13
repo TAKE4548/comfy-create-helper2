@@ -227,3 +227,14 @@ describe('buildGenerationRecord', () => {
     expect(restoredClothes[0].enabled).toBe(true)
   })
 })
+
+describe('buildGenerationRecord image mappings', () => {
+  it('[REQ-427/AC-8] records the submitted reference-image token as a submitted parameter value', () => {
+    const token = `refimg:${'d'.repeat(64)}.png`
+    const m: WorkflowMapping = { id: 9, master_id: 9, node_id: '9', role: 'ref_image', input_type: 'image', param_name: 'image', display_name: '参照画像' }
+    const graph = { '9': { class_type: 'LoadImage', inputs: { image: token } } }
+    const record = buildGenerationRecord(workflow([m]), graph, graph, {})
+    expect(record.parameters).toHaveLength(1)
+    expect(record.parameters[0]).toMatchObject({ input_type: 'image', value: token, status: 'submitted', recorded: true })
+  })
+})

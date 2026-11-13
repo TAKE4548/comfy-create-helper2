@@ -11,6 +11,7 @@ import {
 import type { Workflow } from '../../../api/types'
 import { setSeedModeForMapping } from '../seedModel'
 import { prepareSeedBatch } from '../seedBatch'
+import { generationWorkflow } from '../workflowMappingState'
 
 describe('workflowParamInjector', () => {
   describe('extractGeneralParam', () => {
@@ -689,6 +690,72 @@ describe('workflowParamInjector', () => {
         expect(nodeInputs.value).toBe(12345)
         expect(nodeInputs.seed).toBeUndefined()
       })
+    })
+  })
+
+  describe('image input_type (REQ-427)', () => {
+    const TOKEN = `refimg:${'b'.repeat(64)}.png`
+    const buildWorkflow = (extra: Record<string, any> = {}): any => ({
+      id: 1,
+      name: 'img',
+      json_body: {
+        '10': { class_type: 'LoadImage', inputs: { image: 'example.png' } },
+        '11': { class_type: 'Other', inputs: { image: 'other.png' } },
+      },
+      mappings: [
+        { id: 1, master_id: 5, variant_id: 50, node_id: '10', role: 'ref_image', param_name: 'image', input_name: '', input_type: 'image', display_name: 'Ref' },
+      ],
+      ...extra,
+    })
+
+    it('[REQ-427/AC-6] injects a token into the mapped node input and leaves other nodes unchanged', () => {
+      const result = injectWorkflowParams({ workflow: buildWorkflow(), paramValues: { ref_image: TOKEN } }) as any
+      expect(result['10'].inputs.image).toBe(TOKEN)
+      expect(result['11'].inputs.image).toBe('other.png')
+    })
+
+    it('[REQ-427/AC-6] empty, undefined and non-token values keep the original JSON value without adding value key', () => {
+      for (const v of ['', undefined, 'foo.png']) {
+        const paramValues: Record<string, string> = v === undefined ? {} : { ref_image: v }
+        const result = injectWorkflowParams({ workflow: buildWorkflow(), paramValues }) as any
+        expect(result['10'].inputs.image).toBe('example.png')
+        expect('value' in result['10'].inputs).toBe(false)
+      }
+    })
+
+    it('[REQ-427/AC-6] getInitialParams returns empty for plain filename and the token for a token', () => {
+      expect(getInitialParams(buildWorkflow())).toEqual({ ref_image: '' })
+      const wf = buildWorkflow()
+      wf.json_body['10'].inputs.image = TOKEN
+      expect(getInitialParams(wf)).toEqual({ ref_image: TOKEN })
+    })
+
+    it('[REQ-427/AC-7] disabled slot state excludes the image mapping from generation and keeps raw mappings intact', () => {
+      const raw = buildWorkflow({ mapping_slot_states: { 'v:50': false } })
+      const before = JSON.stringify(raw.mappings)
+      const gen = generationWorkflow(raw)
+      expect(gen.mappings).toHaveLength(0)
+      const result = injectWorkflowParams({ workflow: gen as any, paramValues: { ref_image: TOKEN } }) as any
+      expect(result['10'].inputs.image).toBe('example.png')
+      expect(raw.mappings).toHaveLength(1)
+      expect(JSON.stringify(raw.mappings)).toBe(before)
+
+      raw.mapping_slot_states = { 'v:50': true }
+      const enabled = generationWorkflow(raw)
+      const injected = injectWorkflowParams({ workflow: enabled as any, paramValues: { ref_image: TOKEN } }) as any
+      expect(injected['10'].inputs.image).toBe(TOKEN)
+    })
+
+    it('[REQ-427/AC-7] variantEnabled false slot excludes the image mapping; true injects', () => {
+      const raw = buildWorkflow()
+      const slot = (variantEnabled: boolean) => [{ masterId: 5, variantId: 50, defaultEnabled: true, role: 'ref_image', variantEnabled }]
+      const off = generationWorkflow(raw, slot(false))
+      expect(off.mappings).toHaveLength(0)
+      const r1 = injectWorkflowParams({ workflow: off as any, paramValues: { ref_image: TOKEN } }) as any
+      expect(r1['10'].inputs.image).toBe('example.png')
+      const on = generationWorkflow(raw, slot(true))
+      const r2 = injectWorkflowParams({ workflow: on as any, paramValues: { ref_image: TOKEN } }) as any
+      expect(r2['10'].inputs.image).toBe(TOKEN)
     })
   })
 })

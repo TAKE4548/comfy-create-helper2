@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.9
-**最終更新**: 2026-10-26
+**バージョン**: 2.10
+**最終更新**: 2026-11-14
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-383設計](../design/REQ-383.md) / [REQ-383検証計画](../design/REQ-383-test-plan.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-383設計](../design/REQ-383.md) / [REQ-383検証計画](../design/REQ-383-test-plan.md) / [REQ-427設計](../design/REQ-427.md)
 
 ---
 
@@ -99,11 +99,12 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 ### 2-5. パラメータ入力パネル (`ParamPanel.tsx`)
 
-`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` の既存マッピングだけを動的生成する。Desktopでは所属stageごとに連続groupへ配置し、Prompt領域とは独立したスクロールとsticky見出しの境界切替を行う。未マッピングのstage/roleの入力欄は追加しない。`stageGrouping` は既定値 `false` とし、Mobileなど既存呼び出し元の表示を変えない。
+`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` / `image` の既存マッピングだけを動的生成する。Desktopでは所属stageごとに連続groupへ配置し、Prompt領域とは独立したスクロールとsticky見出しの境界切替を行う。未マッピングのstage/roleの入力欄は追加しない。`stageGrouping` は既定値 `false` とし、Mobileなど既存呼び出し元の表示を変えない。
 
 - **サンプラ・スケジューラ選択 UI**: ComfyUI の `/object_info` から動的取得（オフライン時は定数フォールバック）。
 - **動的 LoRA スタック UI (`LoraStackEditor.tsx`)**: 最大10スロットの動的追加・削除・詰め直し、説明文照合表示。
 - **固定パラメータ**: Batch Size（枚数入力）、Seed（🎲 Shuffle / 🔒 Fixed）。
+- **参照画像入力（`image`、REQ-427）**: `ImageParamField` を表示する。ラベル、サムネイル（Desktop 64px / Mobile 56px 角、未指定時は「未指定」）、「履歴/スナップショットから選択」（主導線）、「アップロード」、フィールド全体への D&D、フィールドにフォーカスがあるときだけ有効なペーストを提供する。選択またはアップロードが成功したときだけ参照トークンを値として更新する。非画像、20MB 超、サーバーエラー、通信失敗ではエラーを表示し、既存の値とサムネイルを変更しない。操作ボタンは 44×44px 以上（`min-h-11 min-w-11`）とする。処理中は操作を無効化し、後から開始した要求の結果だけを反映する。サムネイルを取得できない（削除済み等）場合は「プレビューを表示できません」と表示し、値は保持する。ParamSync の slave 表示では操作できない。クリア操作は提供しない。ストアと API の詳細は §6-4 を参照する。
 - **専用Seed欄**: `seed` mappingはslotごとに固定値またはランダムを選ぶ。Seed値はrole別に保存し、モードはmaster/variantの安定slot単位で保存する。legacy global Seedとは別のSSoTであり、専用欄の値をglobal Seedへ同期・上書きしない。legacy global Seed欄と専用欄が同じworkflowにあっても、それぞれ独立して扱う。自動移行は行わない。
 - **専用Seedの実入力解決 (REQ-353)**: `GET /api/workflows/{workflow_id}` の `WorkflowRead.mappings` はmappingごとにeffective master metadataを返す。master metadataはworkflow mappingのdirect `master_id`を優先し、未設定の場合は`variant.master`を使う。`param_name`をprimary、nullableな`fallback_param_names`を登録順のaliasとして扱う（省略/null/空配列はaliasなし）。現在のnode inputsに存在する最初のown keyへ値を適用する。専用Seedで未登録の`value`、`noise_seed`等を推測したり、新しい入力keyを作成したりしない。primary/fallbackのいずれも存在しない場合は生成要求全体をComfyUI送信前に説明付きで拒否する。既存keyが配線（graph reference）なら他aliasへ切り替えず拒否する。初期値、バッチ検証、graph注入、生成履歴は同じ解決規則を使い、履歴値は送信graphの解決済みkeyから取得する。`value`入力を使うmappingはprimaryまたはfallbackとして明示登録する。legacy非seed global Seedおよび非seed一般parameterの既存処理は維持する。API schemaの同期・稼働比較とE2E証拠は[REQ-354稼働検証記録](../design/REQ-354-verification.md)を参照する。
 - 固定値は10進整数で、JavaScript安全整数範囲（`0..Number.MAX_SAFE_INTEGER` = `9007199254740991`）を許容する（REQ-414）。ワークフロー取り込み時にこれを超える64bit大整数値がノードに存在した場合は、安全にフォールド（modulo）して安全整数として正規化する。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について ComfyUI WebUI 標準互換の範囲（`0..1125899906842624` = `2^50`）で生成する（重複を許す）。
@@ -160,6 +161,7 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
     - **プロンプト一括編集**: 単語・タグの追加（先頭 `prefix` / 末尾 `suffix`、境界カンマ自動補正 `prependToPrompt` / `appendToPrompt`）、検索・置換、共通タグ削除、アセット（TagSet/LoRA）のトリガータグ追加。
     - **パラメータ一括編集**:
       - 一般パラメータ: 個別有効化チェックボックス付きの入力（数値、選択肢等）。サンプラ（`select_sampler`）およびスケジューラ（`select_scheduler`）は `comfyObjectInfo`（`/object_info`）から動的取得した選択肢を優先表示し、ComfyUI 未接続・定義不在時は `ParamPanel` の定数フォールバック（`DEFAULT_SAMPLERS` / `DEFAULT_SCHEDULERS`）を用いて確実に選択肢を描画する。
+      - **参照画像 (`image`、REQ-427)**: `ImageParamSection` が `ImageParamField` を再利用して表示し、チェック ON かつ画像選択済みのロールだけを既存の `paramPatch` 経路で、選択中の全プリセットへ同一の参照トークンとして適用する。未選択または OFF のロールは各プリセットで変更しない。画像の選択・アップロードが失敗した場合は直前の画像を保持する。一括 PUT の途中失敗は既存の一括適用規則（エラートースト、成功分は保存済み、ロールバックなし）に従い、同じ画像で再実行すれば揃う。クリア操作は提供しない。画面の詳細は [SPEC_COMMON §5-4](./SPEC_COMMON.md) を参照する。
       - **LoRA Stack (`lora_stack`)**:
         - 個別有効化チェックボックスを完備。
         - **差分編集モード**: `computeCommonLoras` により選択プリセット全件で共通適用されているLoRA（積集合）を自動抽出し、共通LoRAの削除指定（除外）や強度更新、および新規LoRAの追記（追加スロット）が可能。
@@ -257,6 +259,11 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
   - 正常完了を確認できた場合だけ一括操作を完了扱いにしてモーダルを閉じる。部分成功、未確認、protected jobによる割り込みskippedは確認済み・未確認の結果を表示してモーダルを維持する。処理後も状態未確認のまま残る記録は未確認の項目として必ず報告し、完了扱いにしない。キャンセルを失敗toastとして重複通知しない。
   - 再起動後に孤立した送信待ち（prompt_id 未確定の queued/submitting）は、待機として表示せず『状態未確認』の記録として表示する（自動再送しない）。
   - ジョブ管理は「状態未確認の記録」を待機キューと別の欄で表示し、各行に「取消を試行」と「記録を解除」を、欄に「状態未確認をすべて解除」を提供する。上流 ComfyUI クラッシュ・再起動後の reconcile または取消操作によって `unconfirmed` に遷移した記録は、本欄から直ちに手動解除（`/api/generation/release`）可能となり、待機・実行中・未確認の全表示から安全に除去できる。解除は確認ダイアログで『記録のみが対象でComfyUI側の取消ではない』『実行有無を確認しない』『待機へ戻らず自動再送しない』ことを示してから実行し、解除結果は解除できた件数と解除できなかった件数を分けて示す。解除済みの記録は同欄の折りたたみで直近10件を確認できる。Generate画面のQueueボタンには状態未確認の件数を併記する。
+- **参照画像（ref画像）の受付検証と供給（REQ-427）**:
+  - 受付（`POST /api/generation/batches`、新規 request のみ）: 各 item の graph の入力値から参照トークン（完全一致）を収集し、ストアで実在を確認する。確認と同時に原本の猶予期間を延長する（touch）。欠落が1件でもあれば何も commit せず、422 `ref_image_not_found` で要求全体を拒否する（job を作らない）。上流 ComfyUI へは受付時に通信しない。
+  - worker: `submitting` 遷移後、`bridge.submit` の直前にトークンがあれば、ストアの原本を ComfyUI の `POST /upload/image`（`type=input`、`subfolder=prompt_surgeon_ref`、`overwrite=true`、タイムアウト 30 秒）へ供給する。返却された `<subfolder>/<name>` へトークンを置換した graph だけを `/prompt` へ投入する。ファイル名は `<sha256>.<ext>` のため、同一画像の再供給は上書きとなり冪等である。
+  - 供給に失敗した場合（ストアに原本がない、`/upload/image` の失敗、不正な応答）は、job を `failed`（理由は日本語、outcome `failed`）にし、`/prompt` を送らない。自動再試行はしない。上流投入前にサービスが停止した場合も `failed`（理由「上流投入前にサービスが停止しました」）とする。
+  - トークンを含まない graph は供給処理を通らず、従来どおり投入される。
 - キーボードナビ: `←` / `→` キーでサムネイル切替（リールフォーカス時は `ArrowLeft` / `ArrowRight` による横スクロール移動）。
 - Generateページの`Ctrl+Enter`はダイアログが開いていないときだけ生成を1回実行する。翻訳ダイアログは同じキーを親へ伝播させず、二重実行しない。`S` / `Space`は実際のプレビューにフォーカスがある場合だけsave/open操作に使い、入力欄の編集キー・IME変換・repeat・dialog内・`defaultPrevented`イベントは予約操作として横取りしない。
 
@@ -428,6 +435,7 @@ frontend/src/store/
 3. バイパス対象ノードのバイパス処理
 4. legacy global Seedの従来処理と、専用`seed` mappingの確定処理を分離する。専用Seedはslotごとに値/modeを解決し、固定時はbase + 0始まりbatch index、ランダム時は各jobのComfyUI互換安全乱数値（`0..1125899906842624`）を生成する（REQ-414）。同期親子は親の実値を共有する。専用Seedは全バッチの範囲（`0..Number.MAX_SAFE_INTEGER`）・metadata・対応graphを検証し、全件が有効な場合だけ投入する（境界外や曖昧な設定は要求全体を事前拒否）。
    - 実入力名は`param_name`、続いて登録済み`fallback_param_names`の順に既存own inputから解決する。seed mappingでは暗黙の`value` fallbackや未登録keyの追加をしない。解決不能または選択keyがgraph referenceの場合は、ComfyUIへのPOST前に要求全体を拒否する。初期表示と履歴記録もこの解決済みkeyを使う。
+5. `input_type: 'image'`（REQ-427）は、`paramValues[role]` が参照トークン（完全一致）の場合にだけ、対象ノードの入力へトークンを代入する。入力名は `input_name`、空なら `param_name`、それも空なら `image` とする。値が空またはトークン形式でない場合は対象入力を変更せず、元のワークフロー JSON の値をそのまま投入する。初期値（`getInitialParams`）は、対象入力の値がトークンならその値、それ以外は空文字とする。ComfyUI 側の参照名への置換はバックエンド worker が行う（§2-9）。ワークフロー単位の無効化（REQ-358 の `mapping_slot_states`）またはマスタ側のバリアント無効化（REQ-413）された `image` 型は、入力欄の表示にも注入にも使われない。無効化の解除で、入力欄と注入対象が復帰する。
 
 ### 5-2. 生成前バイパス処理およびスキーマ整合性保証 (REQ-230)
 
@@ -509,6 +517,67 @@ frontend/src/store/
 - LoRA、汎用適用TagSet、LoRA付属trigger setは別種の情報として表示する。保存済み画像では現在の汎用TagSet/trigger set関連をdraft編集し、追加・削除・保存・キャンセルできる。生成プレビューは読取専用。編集はtyped snapshot PATCHで関連だけを更新し、生成記録、LoRAのrole/strength、画像・アルバム等を変更しない。PATCH失敗時はdraftを保持して失敗を表示する。
 - `prompt-surgeon-meta-*` のローカル生成時メタデータcacheはlocalStorageで最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。同期readerによる初回表示と、local記録がない場合のserver fallback、および不足する生成完了日時だけのserver補完を使う。Snapshot `params` はこのcache上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。API query cacheのIndexedDB保存契約は[SPEC_COMMON 6](./SPEC_COMMON.md)を参照する。
 - 実装は局所typecheck/対象テストで確認済み。統合3-Gate、全体回帰、ブラウザーシナリオ、quota拒否時の実ブラウザー動作および実際のComfyUI生成を含む検証は、最終確認の記録ができるまで完了扱いにしない。設計・AC・実装タスクは[REQ-316](../design/REQ-316.md)と[REQ-332](../design/REQ-332.md)を参照。
+
+## 6-4. 参照画像（ref画像）ストア・API・自動クリーンアップ（REQ-427）
+
+### 6-4.1 目的と保存場所
+- 参照画像（AnimaRefAdapter、Openpose 等の `LoadImage` 系入力）は、履歴・スナップショット・ComfyUI のファイルを直接参照せず、アプリ内ストアへ**原本バイト列のまま**取り込んでから使う。直接参照しない理由は次のとおり。
+  1. ComfyUI の output と履歴キャッシュは最新 200 件で整理されるため、直接参照すると後で画像が消える。
+  2. Snapshot 画像は WebP（quality 90）へ再エンコード済みで、制御画像が劣化し得る。
+  3. ComfyUI の再起動・URL 変更・input フォルダの削除に影響されない。生成のたびに worker がストアから供給し直す。
+  4. ファイル名を内容ハッシュ（sha256）とするため、同一画像は1ファイルで済み、再供給も冪等になる。
+- 保存場所は `settings.snapshot_path` の親ディレクトリ直下の `ref_images/`（本番既定 `db/ref_images/`）とする。原本は `<sha256>.<png|jpg|webp>`、サムネイルは `thumbs/<sha256>.webp`（長辺 256px、WebP quality 80）である。ストアのルートは操作ごとに解決する。
+- 参照トークンは `refimg:<sha256>.<png|jpg|webp>` であり、`^refimg:([0-9a-f]{64})\.(png|jpg|webp)$` に完全一致するものだけを有効とする。`ref_id` は `<sha256>.<ext>` である。拡張子は Pillow が検出した形式（PNG / JPEG / WEBP）から決定し、ファイル名や Content-Type は使わない。
+
+### 6-4.2 API `/api/ref-images`
+| メソッド/パス | 入力 | 成功 | 失敗 |
+|---|---|---|---|
+| `POST /api/ref-images/upload` | multipart `file` | 201 `RefImageRead` | 415 `unsupported_media_type`（非画像・破損・PNG/JPEG/WebP 以外）、413 `too_large`（20 MiB 超または 5,000 万画素超）、422 `empty_file` |
+| `POST /api/ref-images/import` | JSON `RefImageImportRequest` | 201 `RefImageRead` | 422（パス区切り・`..`・不正な type・必須項目の欠落）、404 `source_not_found`、502 `upstream_unavailable`、415/413 は upload と同じ |
+| `GET /api/ref-images/{ref_id}` | `ref_id`（`<sha256>.<ext>`） | 200 原本（`image/png` 等） | 404 `not_found`（形式不一致を含む） |
+| `GET /api/ref-images/{ref_id}/thumbnail` | 同上 | 200 WebP（長辺 256px） | 404 `not_found` |
+
+- 原本とサムネイルの応答は `Cache-Control: public, max-age=86400` とし、`immutable` は付けない（GC の猶予計算と整合させるため）。
+- エラー本文は `detail: {"code": <code>, "message": <日本語メッセージ>}` とする。
+- `RefImageRead` は `token`、`ref_id`、`media_type`、`width`、`height`、`byte_size`、`view_url`、`thumbnail_url` を持つ。`RefImageImportRequest` は未知のフィールドを拒否し、`source`（`history` / `snapshot`）、`filename`、`subfolder`、`type`（`output` / `temp`、既定 `output`）、`snapshot_id` を持つ。
+- `upload` は multipart `file` を上限 +1 バイトまでだけ読む。画像の検証（形式、`verify`、5,000 万画素の上限、DecompressionBomb）は保存前に行う。
+- `import` の `source: history` は、ComfyUI の `/view`（`filename`、`subfolder`、`type`）で原本を取得する。ComfyUI が 404 を返した場合、または上流が 404 以外の失敗・接続失敗となった場合は、既存のフルサイズ WebP キャッシュを使う。どちらも得られなければ 404 `source_not_found`、上流失敗かつキャッシュ無しは 502 `upstream_unavailable` とする。
+- `import` の `source: snapshot` は、`snapshot_id` の `Snapshot.image_path` の basename を `settings.snapshot_path` 配下で解決し、同ディレクトリ配下であることを検証する。Snapshot やローカル画像が無ければ 404 `source_not_found`。
+
+### 6-4.3 猶予期間と touch
+- 猶予は原本ファイルの mtime から 72 時間とする。mtime が 72 時間以内の画像は、参照の有無にかかわらず削除しない。
+- mtime は次の契機で現在時刻に更新する（`STORE_LOCK` の下で行う）。
+  - upload / import（新規保存時、および同一内容が既に存在する場合）
+  - 生成受付（`claim`。存在確認と更新を原子的に行う）
+  - 原本・サムネイルの GET（同一画像は 1 時間に 1 回まで）
+- 72 時間の根拠: 原本・サムネイルの `Cache-Control` は 24 時間のため、再表示された画像は「キャッシュ失効 24 時間＋touch 抑制 1 時間」以内に再取得されて猶予が延長される。72 時間はこれに対して十分な余裕を持たせた値である。
+
+### 6-4.4 自動クリーンアップ（GC）の契機と参照収集
+- **契機**: アプリの lifespan 起動後 60 秒で初回実行し、以降 6 時間周期で実行する。プロセス内で同時に走る GC は 1 つだけとする。処理は別スレッドで行い、API・起動・生成を妨げない。アプリ終了時にタスクを cancel する。
+- **参照収集（DB 全テーブル・全列の汎用走査）**: `sqlite_master` から `sqlite_%` を除くテーブル一覧を取得し、全テーブルの全列の値を 1 つの読み取りトランザクションで走査する。文字列（bytes は UTF-8 で復号）に含まれる `refimg:([0-9a-f]{64})\.(png|jpg|webp)`（部分一致。JSON 内の入れ子文字列も対象）を参照として収集する。プリセット値、Multi-Set、Snapshot と生成記録の `params`、生成履歴のメタデータ、生成ジョブ（キュー中・実行中・終端）、ワークフロー定義と履歴、アプリ設定などは個別に列挙しないため、保存場所が増えても走査の更新は不要であり、将来追加されたテーブルも自動的に対象になる。
+- **二段階削除**: 1 回目の収集で「未参照かつ mtime が 72 時間超」の候補を作る。候補が 1 件以上ある場合だけ 2 回目の収集を行い、両方の収集で未参照の候補だけを削除対象とする。各削除は `STORE_LOCK` の下で mtime を再確認し、なお猶予超過の場合にだけ原本とサムネイルを削除する。1 回の実行での削除上限は 500 件とし、残りは次回に回す。
+- GC は DB に書き込まない（読み取り専用）。
+
+### 6-4.5 fail-safe と対象ファイルの限定
+- 次のいずれかが起きた回は、1 件も削除せず中止する（warning を 1 回記録し、次の周期まで待つ）。
+  - ストアルートの不存在、またはストア内の列挙の失敗
+  - テーブル一覧の取得失敗、いずれかのテーブルや行の読み取り例外（1 回目の収集）
+  - 2 回目の収集の失敗
+- 削除対象は次のものに限る。
+  - ストアルート直下の `^[0-9a-f]{64}\.(png|jpg|webp)$` に一致する通常ファイル（シンボリックリンクは除外）
+  - `thumbs/` 直下の `^[0-9a-f]{64}\.webp$` のうち、対応する原本が無く mtime が猶予を超えたもの
+  - ルート直下の `.tmp_*`（mtime が 1 時間を超えたもの。書き込み途中の残骸）
+- `db/snapshots`、`full_cache`、ComfyUI の input（`prompt_surgeon_ref/` を含む）、DB およびその WAL / SHM ファイルには触れない。
+
+### 6-4.6 削除後の挙動
+- 猶予内の参照は touch により保護される。受付時の `claim` は原本の猶予も延長するため、受付後・送信前に削除されることはない。
+- DB 外にあり猶予を超えて残った参照（ブラウザーの未保存ドラフト、閉じたタブ等）は、次のとおり明示的に扱う。
+  - 表示: サムネイル取得が 404 になると「プレビューを表示できません」を表示し、値（トークン）は保持する。
+  - 生成: 受付時に欠落を検出し、422 `ref_image_not_found` で要求全体を拒否する。画像を「未指定」として無断で生成することはしない。利用者が画像を選び直せば復旧する。
+  - 受付後に欠落が見つかった場合は、worker が `failed` にし `/prompt` を送らない（§2-9）。
+- DB 外の参照はサーバーから観測できないため、猶予期間と touch で大半を吸収する。残余リスクは、一括編集で画像を選んだまま 72 時間を超えて適用しなかった場合を含め、この挙動で扱う。
+
+---
 
 ## 7. コンポーネント & フック構成
 

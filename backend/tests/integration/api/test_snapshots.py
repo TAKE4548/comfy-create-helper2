@@ -376,3 +376,22 @@ def test_variant_ref_ac2_patch_params_normalized(
     assert "unmapped_key" in caplog.text
     assert str(snap_id) in caplog.text
 
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-8")
+def test_snapshot_roundtrips_ref_image_token(client: TestClient, db_session: Session, snapshot_fixtures: dict) -> None:
+    """[REQ-427/AC-8] Snapshot params keep the ref_image token string unchanged after create and GET."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    wf = snapshot_fixtures["workflow"]
+    token = "refimg:" + "a" * 64 + ".png"
+
+    created = client.post(
+        "/api/snapshots",
+        json={"workflow_id": wf.id, "image_path": "test.png", "params": {"ref_image": token}},
+    )
+    assert created.status_code == 201, created.text
+    got = client.get(f"/api/snapshots/{created.json()['id']}")
+    assert got.status_code == 200, got.text
+    assert got.json()["params"]["ref_image"] == token

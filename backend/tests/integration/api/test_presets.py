@@ -608,3 +608,38 @@ def test_copy_workflow_duplicates_preset_values(
     """[REQ-418/AC-4] copy_workflow duplicates preset values."""
     test_variant_ref_ac4_workflow_copy_duplicates_values_and_sync_groups(client, db_session, test_workflow)
 
+
+
+@getattr(pytest.mark, "REQ-427")
+@getattr(pytest.mark, "AC-8")
+def test_preset_roundtrips_ref_image_token(
+    client: TestClient, db_session: Session, test_workflow: models.Workflow
+) -> None:
+    """[REQ-427/AC-8] Preset create/update keeps the ref_image token string unchanged on response and re-fetch."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+    token_a = "refimg:" + "a" * 64 + ".png"
+    token_b = "refimg:" + "b" * 64 + ".webp"
+
+    res = client.post(
+        "/api/workflow-presets",
+        json={
+            "workflow_id": test_workflow.id, "name": "Ref Preset", "param_values": {"ref_image": token_a},
+            "batch_size": 1, "seed_mode": "random", "seed": -1,
+        },
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["param_values"]["ref_image"] == token_a
+    preset_id = res.json()["id"]
+
+    listed = client.get(f"/api/workflow-presets?workflow_id={test_workflow.id}")
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["param_values"]["ref_image"] == token_a
+
+    put = client.put(
+        f"/api/workflow-presets/{preset_id}",
+        json={"name": "Ref Preset", "param_values": {"ref_image": token_b}, "batch_size": 1, "seed_mode": "random", "seed": -1},
+    )
+    assert put.status_code == 200, put.text
+    relisted = client.get(f"/api/workflow-presets?workflow_id={test_workflow.id}")
+    assert relisted.json()[0]["param_values"]["ref_image"] == token_b

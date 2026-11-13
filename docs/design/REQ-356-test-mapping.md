@@ -7,10 +7,10 @@
 
 | 項目 | 件数 | 備考 |
 |---|---|---|
-| Backend テストファイル数 | 78 | `backend/tests/**/*.py` |
-| Frontend テストファイル数 | 265 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 3584 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 1285 | `REQ-xxx` 関連 |
+| Backend テストファイル数 | 81 | `backend/tests/**/*.py` |
+| Frontend テストファイル数 | 270 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
+| 抽出テストケース総数 | 3685 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 1386 | `REQ-xxx` 関連 |
 | PBI 紐づけなしテスト数 | 2299 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
 | テスト名規約違反数 (AC-15) | 22 | `[REQ-xxx/AC-n]` 未準拠 |
@@ -1657,6 +1657,112 @@
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac3_sync_group_unresolved_role_warns_and_migrates: [REQ-426/AC-1] step_035 logs warning and completes schema migration when sync group has unknown slave role. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_step_035_unresolved_role_warns_and_migrates: [REQ-426/AC-1] Alias: test_step_035_unresolved_role_warns_and_migrates. | AC-1 | PASS |
 | `backend/tests/unit/test_helpers.py` | test_lifespan_reraises_migration_failure: [REQ-426/AC-3] lifespan logs error and re-raises when run_migrations fails. | AC-3 | PASS |
+
+### REQ-427 (計 101 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/api/test_presets.py` | test_preset_roundtrips_ref_image_token: [REQ-427/AC-8] Preset create/update keeps the ref_image token string unchanged on response and re-fetch. | AC-8 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_upload_returns_read_model_and_serves_original_and_thumbnail: [REQ-427/AC-5] upload returns 201 RefImageRead and both GET endpoints serve the stored images. | AC-5 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_upload_rejections_use_fixed_codes_and_leave_store_unchanged: [REQ-427/AC-5] 415/413/422 carry detail.code and no file is stored. | AC-5 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_history_import_from_comfyui_view: [REQ-427/AC-4] history import stores the ComfyUI /view image and returns a token. | AC-4 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_history_import_falls_back_to_full_cache_and_reports_failures: [REQ-427/AC-4] 404 uses the full_cache WebP; missing cache yields 404/502 by upstream state. | AC-4 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_snapshot_import_success_idempotent_and_failures: [REQ-427/AC-4] snapshot import: 201 and same token twice; unknown id and out-of-dir path are 404. | AC-4 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_import_rejects_unsafe_or_incomplete_requests_without_upstream_call: [REQ-427/AC-4] Path traversal, bad type and missing fields are 422 and ComfyUI /view is never called. | AC-4 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_get_rejects_malformed_ref_ids: [REQ-427/AC-4] Malformed or traversal ref ids and unknown valid ids are 404. | AC-4 | PASS |
+| `backend/tests/integration/api/test_ref_images.py` | test_reupload_refreshes_mtime_and_get_touch_is_throttled: [REQ-427/AC-8] Re-upload refreshes mtime; GET refreshes only when older than 1h; Cache-Control has no immutable. | AC-8 | PASS |
+| `backend/tests/integration/api/test_snapshots.py` | test_snapshot_roundtrips_ref_image_token: [REQ-427/AC-8] Snapshot params keep the ref_image token string unchanged after create and GET. | AC-8 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_mapping_master_image_input_type_persists_on_create: [REQ-427/AC-1] POST /api/mapping-masters keeps input_type 'image' on create, GET and list. | AC-1 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_mapping_master_input_type_updates_to_image: [REQ-427/AC-1] PUT /api/mapping-masters/{id} changes a textarea master to 'image' and GET returns it. | AC-1 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_seed_defines_ref_image_master_variant_and_ruleset: [REQ-427/AC-2] seed_initial_data defines ref_image master (image), main variant and LoadImage x image rule. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_seed_ref_image_is_idempotent: [REQ-427/AC-2] Calling seed_initial_data twice keeps exactly one ref_image master, ruleset and variant. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_scan_detects_load_image_as_ref_image: [REQ-427/AC-2] POST /api/workflows/scan matches a LoadImage node as role ref_image on input 'image'. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_scan_reports_duplicated_load_image_with_min_node: [REQ-427/AC-2] Two LoadImage nodes: smallest id is matched and a duplicated warning lists both node ids. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_scan_result_saves_as_workflow_with_ref_image_mapping: [REQ-427/AC-2] A scanned LoadImage candidate is saved via POST /api/workflows and returned as ref_image/image. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_seed_skips_ref_image_when_role_used_by_other_master_variant: [REQ-427/AC-2] seed_initial_data tolerates a ref_image role owned by another master's variant. | AC-2 | PASS |
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_upload_image_posts_multipart_to_input_subfolder_and_returns_reference: [REQ-427/AC-6] upload_image sends the original bytes as multipart to /upload/image and returns name/subfolder/type. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_upload_image_rejects_malformed_upstream_responses: [REQ-427/AC-6] A missing/non-str name, non-JSON or non-dict upload response raises UpstreamResponseError. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_upload_image_http_failure_propagates_and_marks_upstream_not_ready: [REQ-427/AC-6] An HTTP 500 on upload propagates HTTPStatusError and flips http_ready to False. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_worker_uploads_reference_once_and_substitutes_token_before_submit: [REQ-427/AC-6] A refimg token in the graph is uploaded once and replaced by the ComfyUI reference name before POST /prompt. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_graph_without_reference_tokens_skips_upload_and_submits_unchanged: [REQ-427/AC-6] A graph without refimg tokens performs no upload and is submitted as before. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_accept_rejects_missing_reference_with_422_and_commits_nothing: [REQ-427/AC-6] A token absent from the store is rejected at acceptance with 422 ref_image_not_found before any commit. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_accept_touches_old_reference_and_rejects_after_gc_removal: [REQ-427/AC-8] Acceptance touches the original (protecting it from GC); a removed original yields 422 at acceptance. | AC-8 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_accept_replay_does_not_revalidate_references: [REQ-427/AC-6] A replayed request_id returns the existing acceptance even if the stored image has been removed. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_upload_failure_marks_job_failed_without_submit_or_retry: [REQ-427/AC-6] An upload failure fails the job (outcome failed) naming the ref_id, never submits, and is not retried. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_reference_removed_between_accept_and_worker_fails_job: [REQ-427/AC-6] If the stored original disappears after acceptance, the job fails with a not-found reason and no submit. | AC-6 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_collect_and_replace_only_touch_exact_reference_tokens: [REQ-427/AC-6] collect_ref_ids returns only exact tokens; replace_ref_tokens swaps only those and never mutates its input. | AC-6 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_deletes_only_unreferenced_images_past_grace: [REQ-427/AC-8] Old unreferenced originals and thumbnails are deleted; images within 72h are kept. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_keeps_images_referenced_from_each_storage_location: [REQ-427/AC-8] A token stored in any known location protects an image past the grace period. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_scans_every_table_including_future_ones: [REQ-427/AC-8] tables_scanned covers all model tables and an ad-hoc table is scanned too. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_scan_pattern_survives_nested_json_encoding: [REQ-427/AC-8] Tokens embedded in JSON re-encoded 1-3 times are always found; mutated tokens are not. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_failsafe_when_collection_or_root_fails: [REQ-427/AC-8] Any collection failure or missing root aborts without deleting or raising. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_keeps_image_referenced_between_collections: [REQ-427/AC-8] A reference added after the first scan is caught by the second scan. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_keeps_image_touched_after_candidate_selection: [REQ-427/AC-8] touch between candidate selection and deletion is honored by the locked recheck. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_touches_only_designated_names: [REQ-427/AC-8] Foreign names, uppercase hex, nested thumbs and fresh tmp are kept; stale tmp is removed. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_removes_orphan_thumbnails_past_grace_only: [REQ-427/AC-8] Thumbnails without an original are removed after grace, kept within grace. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_caps_deletions_per_run: [REQ-427/AC-8] 501 candidates: first run deletes 500, second run deletes the remaining one. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_gc_loop_survives_errors_and_stops_on_cancel: [REQ-427/AC-8] gc_loop keeps running when every run fails and terminates on cancellation. | AC-8 | PASS |
+| `backend/tests/integration/services/test_ref_image_gc.py` | test_store_claim_and_touch_are_atomic_with_gc_lock: [REQ-427/AC-8] claim touches existing ids, reports missing ones, and uses the shared store lock. | AC-8 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_save_bytes_stores_content_addressed_original_and_thumbnail: [REQ-427/AC-5] Supported formats are stored as <sha256>.<ext> with identical bytes, a thumbnail, and no temp leftovers. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_save_bytes_rejects_invalid_inputs: [REQ-427/AC-5] Non-images, truncated PNG, GIF, empty, oversize and spoofed-dimension images are rejected with fixed codes. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_save_bytes_ignores_declared_name_and_type: [REQ-427/AC-5] Detection depends only on content: PNG bytes stay png regardless of any claimed extension. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_parse_ref_token_accepts_canonical_tokens: [REQ-427/AC-5] Every canonical token parses back to its ref_id and round-trips via token_for. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_parse_ref_token_rejects_mutations: [REQ-427/AC-5] Uppercased, padded, wrong-length or wrong-extension tokens never parse. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_parse_ref_token_matches_only_exact_grammar: [REQ-427/AC-5] For arbitrary text, parse_ref_token returns a ref_id only on full-grammar match. | AC-5 | PASS |
+| `backend/tests/unit/test_ref_image_store.py` | test_parse_ref_token_rejects_non_strings: [REQ-427/AC-5] Non-string values never parse as tokens. | AC-5 | PASS |
+| `frontend/e2e/generateParamImageField.spec.ts` | [REQ-427/AC-3] 360x780: image field fits viewport, buttons are 44px+, picker opens as bottom sheet | AC-3 | PASS |
+| `frontend/e2e/generateParamImageField.spec.ts` | [REQ-427/AC-3] 1280x800: image field with placeholder is visible, picker opens as centered dialog | AC-3 | PASS |
+| `frontend/e2e/profileBulkEditImage.spec.ts` | [REQ-427/AC-3] 360x780: image field fits, hit areas are 44px+, picker is in front and Escape closes only the picker | AC-3 | PASS |
+| `frontend/e2e/profileBulkEditImage.spec.ts` | [REQ-427/AC-8] 1280x800: chosen image shows a thumbnail and applying to 2 presets sends 2 PUTs with the same token | AC-8 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-4] picker selection from history calls onChange(token) and thumbnail follows value | AC-4 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] file input upload posts FormData to /ref-images/upload then onChange(token) | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] dropping an image file uploads it | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] paste on focused field uploads; paste outside the field is ignored | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] non-image file shows alert, no fetch, no onChange, keeps thumbnail, sets error toast | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] oversize file is rejected without fetch | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] fetch 500 and reject keep value and show alert | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-5] stale response of earlier upload is discarded | AC-5 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-3] disabled disables buttons and ignores drop/paste | AC-3 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-3] unspecified placeholder and 44px/touch classes on buttons | AC-3 | PASS |
+| `frontend/src/components/__tests__/ImageParamField.test.tsx` | [REQ-427/AC-4] onPickerOpenChange is notified on open and on each close path | AC-4 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-427/AC-1] image option is listed in the standard-type optgroup and not in the custom-type optgroup | AC-1 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-427/AC-1] creating with image sends input_type image | AC-1 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-427/AC-1] editing a master and choosing image saves master.input_type image | AC-1 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-427/AC-1] opening an existing image master selects image | AC-1 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-3] image role renders as ImageParamField (2 buttons + placeholder), not a text input | AC-3 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-3] field buttons are disabled when unchecked and enabled when checked | AC-3 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-5] checked + uploaded image is applied as the token in paramPatch | AC-5 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-5] checked without a selected image leaves ref_image out of the payload | AC-5 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-5] a failed second upload keeps the previous thumbnail and token | AC-5 | PASS |
+| `frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx` | [REQ-427/AC-4] Escape while the picker is open closes only the picker; afterwards it closes the modal | AC-4 | PASS |
+| `frontend/src/components/__tests__/RefImagePickerModal.test.tsx` | [REQ-427/AC-4] history tile import posts history body then calls onSelected and onClose | AC-4 | PASS |
+| `frontend/src/components/__tests__/RefImagePickerModal.test.tsx` | [REQ-427/AC-4] snapshot tab import posts snapshot body then calls onSelected | AC-4 | PASS |
+| `frontend/src/components/__tests__/RefImagePickerModal.test.tsx` | [REQ-427/AC-4] import 404 shows alert inside modal, keeps it open, no onSelected | AC-4 | PASS |
+| `frontend/src/components/__tests__/RefImagePickerModal.test.tsx` | [REQ-427/AC-4] shows empty state text for empty history | AC-4 | PASS |
+| `frontend/src/components/__tests__/RefImagePickerModal.test.tsx` | [REQ-427/AC-3] tabs and tiles carry 44px classes and scroll area has overscroll-contain | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-3] desktop shows label, two buttons, placeholder; token value shows thumbnail | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-3] mobile shows same elements with 44px and touch-manipulation classes | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-7] image field is hidden when its mapping slot is disabled and shown when enabled | AC-7 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-8] thumbnail follows paramValues change | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-8] thumbnail load error shows fallback text and keeps the value | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-427/AC-3] ParamSync slave image role is disabled | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` | [REQ-427/AC-8] each set injects its own reference-image token into the graph and keeps it in param_values | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/usePresetState.test.ts` | [REQ-427/AC-8] sends the same token to both presets, keeps other roles, and syncs sets | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/usePresetState.test.ts` | [REQ-427/AC-8] a failing PUT raises an error toast and throws, keeps the other PUT, and re-apply is idempotent | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts` | [REQ-427/AC-8] loadSnapshotParams restores a reference-image token and excludes reserved keys | AC-8 | PASS |
+| `frontend/src/utils/__tests__/generationRecord.test.ts` | [REQ-427/AC-8] records the submitted reference-image token as a submitted parameter value | AC-8 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-5] isRefImageToken accepts only canonical tokens (property) | AC-5 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-5] isRefImageToken rejects mutations and arbitrary strings (property) | AC-5 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-4] parseHistoryImageUrl extracts filename, subfolder, type | AC-4 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-4] parseHistoryImageUrl returns null for missing filename or unsupported type | AC-4 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-5] upload posts FormData with file and no Content-Type | AC-5 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-5] importFromHistory and importFromSnapshot send JSON with source | AC-5 | PASS |
+| `frontend/src/utils/__tests__/refImage.test.ts` | [REQ-427/AC-5] non-2xx responses throw | AC-5 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-427/AC-6] injects a token into the mapped node input and leaves other nodes unchanged | AC-6 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-427/AC-6] empty, undefined and non-token values keep the original JSON value without adding value key | AC-6 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-427/AC-6] getInitialParams returns empty for plain filename and the token for a token | AC-6 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-427/AC-7] disabled slot state excludes the image mapping from generation and keeps raw mappings intact | AC-7 | PASS |
+| ... | *(他 1 件割愛)* | - | - |
 
 ### PBI紐づけなし (汎用/ガバナンス) (計 2299 件)
 

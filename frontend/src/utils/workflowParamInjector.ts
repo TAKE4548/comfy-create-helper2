@@ -6,6 +6,7 @@
 import type { Workflow, StageMaster } from '../api/types'
 import { parseSeedValue, SEED_MODES_KEY, seedSlotKey } from './seedModel'
 import { resolveSeedInputKey } from './seedInputResolver'
+import { isRefImageToken } from './refImage'
 
 export interface WorkflowNode {
   inputs?: Record<string, any>
@@ -138,6 +139,13 @@ export function getInitialParams(workflow: Workflow, stages?: StageMaster[]): Re
           : resolveSeedInputKey(m, node?.inputs)
         const value = key ? node?.inputs?.[key] : undefined
         init[resolvedRole] = value !== undefined && !Array.isArray(value) ? String(value) : ''
+      } else if (m.input_type === 'image') {
+        const node = m.node_id ? wfJson[m.node_id] : null
+        const key = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+          ? m.input_name.trim()
+          : (m.param_name || 'image')
+        const v = node?.inputs?.[key]
+        init[resolvedRole] = isRefImageToken(v) ? v : ''
       } else {
         const node = m.node_id ? wfJson[m.node_id] : null
         const targetParam = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
@@ -332,6 +340,15 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
       const prepared = preparedSeeds.get(m)
       if (!prepared) throw new Error(`${m.display_name || m.role}: seed入力の準備に失敗しました`)
       node.inputs[prepared.key] = prepared.seed
+    } else if (m.input_type === 'image') {
+      // Only a reference-image token is injected; empty/non-token values keep the original JSON value.
+      const raw = paramValues[m.role]
+      if (isRefImageToken(raw)) {
+        const key = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+          ? m.input_name.trim()
+          : (m.param_name || 'image')
+        node.inputs[key] = raw
+      }
     } else if (m.role !== 'Sampler_Seed' || !seedOptions) {
       const targetParam = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
         ? m.input_name.trim()

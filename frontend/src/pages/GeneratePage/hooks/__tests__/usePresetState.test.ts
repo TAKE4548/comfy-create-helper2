@@ -1369,5 +1369,115 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       expect(state.promptChips).not.toHaveProperty('lora')
     })
   })
+
+  describe('REQ-427: bulk apply of an image token to multiple presets', () => {
+    const TOKEN = `refimg:${'a'.repeat(64)}.png`
+    const mkPreset = (id: number, extra: Record<string, string>): WorkflowPreset => ({
+      id,
+      workflow_id: 1,
+      name: `Set ${id}`,
+      param_values: { steps: String(id), ...extra },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 1,
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    })
+    const workflow: Workflow = {
+      id: 1,
+      name: 'Workflow',
+      json_body: {},
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'steps', param_name: null, input_type: 'int', display_name: null },
+        { id: 2, master_id: 2, node_id: '2', role: 'ref_image', param_name: null, input_type: 'image', display_name: null },
+      ],
+      created_at: '2026-09-08T10:00:00Z',
+    }
+    const mkSet = (p: WorkflowPreset) => ({
+      id: p.id,
+      name: p.name,
+      paramValues: { ...(p.param_values as Record<string, string>) },
+      appliedAssets: {},
+      batchSize: 1,
+      seedMode: 'random' as const,
+      seed: 1,
+      checked: true,
+      promptChips: {},
+    })
+
+    let current: WorkflowPreset[]
+    const setup = async () => {
+      const p101 = mkPreset(101, {})
+      const p102 = mkPreset(102, {})
+      current = [p101, p102]
+      useGenerationStore.setState({
+        selectedWorkflowId: 1,
+        activeSetId: 101,
+        openPresetIds: [101, 102],
+        sets: [mkSet(p101), mkSet(p102)],
+      })
+      vi.mocked(workflowPresetsApi.list).mockImplementation(async () => current)
+      const hook = renderHook(() => usePresetState({ selectedWorkflowId: 1, workflow }), { wrapper })
+      await waitFor(() => expect(hook.result.current.presets).toHaveLength(2))
+      return hook
+    }
+    const okUpdate = async (id: number, patch: any) => {
+      const base = current.find((p) => p.id === id)!
+      const updated = { ...base, ...patch, param_values: patch.param_values ?? base.param_values, updated_at: '2026-09-08T10:01:00Z' }
+      current = current.map((p) => (p.id === id ? updated : p))
+      return updated
+    }
+
+    it('[REQ-427/AC-8] sends the same token to both presets, keeps other roles, and syncs sets', async () => {
+      vi.mocked(workflowPresetsApi.update).mockImplementation(okUpdate as any)
+      const { result } = await setup()
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({ targetPresetIds: [101, 102], paramPatch: { ref_image: TOKEN } } as any)
+      })
+
+      const calls = vi.mocked(workflowPresetsApi.update).mock.calls
+      expect(calls.map((c) => c[0]).sort()).toEqual([101, 102])
+      const body = (id: number) => (calls.find((c) => c[0] === id)![1] as any).param_values
+      expect(body(101).ref_image).toBe(TOKEN)
+      expect(body(102).ref_image).toBe(TOKEN)
+      expect(body(101).steps).toBe('101')
+      expect(body(102).steps).toBe('102')
+      const sets = useGenerationStore.getState().sets
+      expect(sets.find((s) => s.id === 101)?.paramValues.ref_image).toBe(TOKEN)
+      expect(sets.find((s) => s.id === 102)?.paramValues.ref_image).toBe(TOKEN)
+    })
+
+    it('[REQ-427/AC-8] a failing PUT raises an error toast and throws, keeps the other PUT, and re-apply is idempotent', async () => {
+      vi.mocked(workflowPresetsApi.update).mockImplementation(async (id: number, patch: any) => {
+        if (id === 102) throw new Error('PUT failed')
+        return okUpdate(id, patch)
+      })
+      const { result } = await setup()
+
+      await act(async () => {
+        await expect(
+          result.current.handleBulkEditApply({ targetPresetIds: [101, 102], paramPatch: { ref_image: TOKEN } } as any),
+        ).rejects.toThrow('PUT failed')
+      })
+
+      expect(vi.mocked(workflowPresetsApi.update).mock.calls.map((c) => c[0]).sort()).toEqual([101, 102])
+      expect(current.find((p) => p.id === 101)?.param_values.ref_image).toBe(TOKEN)
+      expect(current.find((p) => p.id === 102)?.param_values.ref_image).toBeUndefined()
+      expect(useGenerationStore.getState().errorToast?.type).toBe('error')
+      const sets = useGenerationStore.getState().sets
+      expect(sets.find((s) => s.id === 101)?.paramValues.ref_image).not.toBe(TOKEN)
+      expect(sets.find((s) => s.id === 102)?.paramValues.ref_image).not.toBe(TOKEN)
+
+      vi.mocked(workflowPresetsApi.update).mockImplementation(okUpdate as any)
+      await act(async () => {
+        await result.current.handleBulkEditApply({ targetPresetIds: [101, 102], paramPatch: { ref_image: TOKEN } } as any)
+      })
+      expect(current.map((p) => p.param_values.ref_image)).toEqual([TOKEN, TOKEN])
+      expect(useGenerationStore.getState().sets.find((s) => s.id === 102)?.paramValues.ref_image).toBe(TOKEN)
+    })
+  })
 })
 

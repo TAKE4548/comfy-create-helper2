@@ -7,6 +7,7 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import type { WorkflowMapping } from '../api/types'
 import { readSeedSettings, resolveSeedSyncRoots, seedSlotKey } from '../utils/seedModel'
 import { SeedField } from './SeedField'
+import { ImageParamField } from './ImageParamField'
 import StageInputGroup from './StageInputGroup'
 import { useMappingStageGroups } from '../hooks/useMappingStageGroups'
 
@@ -203,6 +204,13 @@ export const ParamPanel = ({
         const isSyncedSlave = Boolean(syncGroup)
         const masterDisplayName = syncGroup ? (paramMappings.find((pm) => pm.role === syncGroup.master_role)?.display_name || syncGroup.master_role) : ''
 
+        if (m.input_type === 'image') {
+          return (
+            <ImageParamField key={m.id} label={m.display_name || m.role!} fieldKey={m.role!} value={paramValues[m.role!]}
+              onChange={(token) => setParamValues({ ...paramValues, [m.role!]: token })}
+              mobile={mobile} disabled={isSyncedSlave} />
+          )
+        }
         if (m.input_type === 'seed') {
           const mapping = m as WorkflowMapping
           const rootSlot = seedRoots[seedSlotKey(mapping)]

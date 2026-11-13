@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.8
-**最終更新**: 2026-10-20
+**バージョン**: 2.9
+**最終更新**: 2026-11-14
 **ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）。§1-6・§5-6のモバイルUI共通規約は採用済みだが、導入状況が「導入前」の規則は現行の挙動を表さない
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md) / [REQ-408設計](../design/REQ-408.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md) / [REQ-408設計](../design/REQ-408.md) / [REQ-427設計](../design/REQ-427.md)
 
 ---
 
@@ -488,6 +488,8 @@ interface TagChipEventDetail {
   - **プロンプト対象欄のモード別排他制御 (AC-5)**: 「検索・置換」は複数対象フィールドの選択可（「すべて対象」チェックあり）。「全置換（上書き）」「先頭に追加」「末尾に追加」は単一排他的選択（ラジオボタン）。モード切替時は先頭1件にフォールバック。
   - **パラメータインクリメンタル検索 (AC-6)**: パラメータ一覧上部にインクリメンタル検索入力を備え、名称・役割の部分一致（大文字小文字無視・正規表現メタ文字安全）で絞り込み。非表示中アイテムのチェック状態も維持・適用。
   - **共通タグ編集サブメニュー統一 (AC-7)**: タグチップ本体クリックで詳細編集サブメニュー（ポップオーバー）を開き、文言編集・強度段階調整（±0.1, ±0.3）を実施。独立した `X` ボタンで削除対象へマーク。
+  - **参照画像（`image`）型の一括適用（REQ-427 AC-10）**: `ParamBulkEditTab` は `input_type === 'image'` のロールを `ImageParamSection` に分岐する。`ImageParamSection` は既存のパラメータ項目と同じカードで、個別有効化チェックボックスとラベルを表示し、本体に `ImageParamField`（サムネイル、履歴/スナップショット選択、アップロード、D&D、ペースト）を再利用する。選択した画像は `paramPatch[role]` に参照トークンとして入り、既存の一括適用経路（`buildBulkEditPayload` → `computePresetPatch` → 並列 PUT）で、選択中の全プリセットへ同一トークンとして書き込まれる。チェック OFF、または画像未選択のロールは各プリセットで変更しない。クリア操作は提供しない。
+    - **Escape**: 画像ピッカー（共通 `Modal`）の表示中は、一括編集モーダルは Escape で閉じず、Escape はピッカーのみを閉じる。共通 `Modal` は `window` の keydown で Escape を処理する既存の共有挙動であるため、外側のレガシー `.modal-backdrop` モーダル（`ProfileBulkEditModal`）は、`ImageParamField` のピッカー開閉を `onImagePickerOpenChange` で受けた表示状態を見て、自身の Escape 処理を無視する。
 - モジュール分割構成（`frontend/src/components/ProfileBulkEditModal/`）：
   - `index.tsx`: モーダル枠・タブ切替（Prompt / Params）・プレビュー確認遷移
   - `types.ts`: `BulkEditPayload`, `CommonTagItem`, `CommonLoraOp` 等の型定義
@@ -497,6 +499,7 @@ interface TagChipEventDetail {
   - `BulkEditConfirmView.tsx`: 適用前変更サマリー確認画面
   - `tabs/PromptBulkEditTab/`: プロンプト検索置換・追加・上書き・共通タグ強度変更/削除
   - `tabs/ParamBulkEditTab/`: パラメータ型別一括編集・LoRAスタック（差分/上書き）・バッチサイズ
+  - `tabs/ParamBulkEditTab/ImageParamSection.tsx`: `image` 型の一括編集行（`ImageParamField` を再利用する薄いラッパー、REQ-427）
 - 全構成ファイルは単体責務に分離され最大250行以下を遵守。
 
 ### 5-5. ドラッグ＆ドロップ（グループ移動オーバーレイ）

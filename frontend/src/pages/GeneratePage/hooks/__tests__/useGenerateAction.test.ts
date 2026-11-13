@@ -2072,4 +2072,30 @@ describe('useGenerateAction', () => {
       expect(graph2['30'].inputs.text).toBe('bob, suit')
     })
   });
+
+  describe('REQ-427 reference image tokens in multi-set generation', () => {
+    it('[REQ-427/AC-8] each set injects its own reference-image token into the graph and keeps it in param_values', async () => {
+      const tokenA = `refimg:${'a'.repeat(64)}.png`;
+      const tokenB = `refimg:${'b'.repeat(64)}.jpg`;
+      const wf: Workflow = {
+        id: 5,
+        name: 'Img Workflow',
+        created_at: '',
+        json_body: { '5': { class_type: 'LoadImage', inputs: { image: 'example.png' } } },
+        mappings: [
+          { id: 1, master_id: 1, node_id: '5', role: 'ref_image', param_name: 'image', input_type: 'image', display_name: 'Ref' },
+        ],
+      };
+      mockStore.sets = [tokenA, tokenB].map((t, i) => ({
+        id: String(i), name: `S${i}`, checked: true, batchSize: 1, seedMode: 'fixed', seed: 1, paramValues: { ref_image: t }, appliedAssets: {},
+      }));
+      await useGenerateAction(wf).handleGenerateSets();
+      const items = mockStore.submitGenerationBatch.mock.calls[0][0].items;
+      expect(items).toHaveLength(2);
+      expect(items[0].graph['5'].inputs.image).toBe(tokenA);
+      expect(items[0].param_values.ref_image).toBe(tokenA);
+      expect(items[1].graph['5'].inputs.image).toBe(tokenB);
+      expect(items[1].param_values.ref_image).toBe(tokenB);
+    });
+  });
 });

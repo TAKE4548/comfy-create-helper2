@@ -762,4 +762,51 @@ describe('MappingMasterEditModal common bottom-sheet Modal', () => {
       expect(db.ruleSets[0].entries[0].class_type).toBe('CLIPTextEncode')
     })
   })
+
+  describe('[REQ-427] image input type', () => {
+    const inputTypeSelect = () => {
+      const found = screen.getAllByRole('combobox').find((el) => el.querySelector('option[value="textarea"]'))
+      expect(found).toBeDefined()
+      return found as HTMLSelectElement
+    }
+
+    it('[REQ-427/AC-1] image option is listed in the standard-type optgroup and not in the custom-type optgroup', async () => {
+      renderComponent()
+      await flush()
+      const sel = inputTypeSelect()
+      const standard = sel.querySelector('optgroup[label="標準型"]') as HTMLElement
+      expect(standard.querySelector('option[value="image"]')).not.toBeNull()
+      expect(standard.querySelector('option[value="image"]')?.textContent).toContain('画像')
+      const custom = sel.querySelector('optgroup[label="カスタム型"]')
+      if (custom) expect(custom.querySelector('option[value="image"]')).toBeNull()
+    })
+
+    it('[REQ-427/AC-1] creating with image sends input_type image', async () => {
+      const { onSave } = renderComponent()
+      await flush()
+      fireEvent.change(screen.getByPlaceholderText('例: Positive Prompt'), { target: { value: 'Ref' } })
+      fireEvent.change(screen.getByPlaceholderText('例: text, steps, cfg'), { target: { value: 'image' } })
+      fireEvent.change(screen.getByPlaceholderText('例: KSampler'), { target: { value: 'LoadImage' } })
+      fireEvent.change(inputTypeSelect(), { target: { value: 'image' } })
+      expect(inputTypeSelect().value).toBe('image')
+      fireEvent.submit(screen.getByText('マスターを保存').closest('form') as HTMLFormElement)
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ input_type: 'image' }))
+    })
+
+    it('[REQ-427/AC-1] editing a master and choosing image saves master.input_type image', async () => {
+      await renderEdit()
+      fireEvent.change(inputTypeSelect(), { target: { value: 'image' } })
+      fireEvent.click(saveButton())
+      await waitFor(() => expect(calls.atomicSave).toHaveLength(1))
+      expect(calls.atomicSave[0].master.input_type).toBe('image')
+      expect(db.masters[100].input_type).toBe('image')
+    })
+
+    it('[REQ-427/AC-1] opening an existing image master selects image', async () => {
+      db.masters[100].input_type = 'image'
+      await renderEdit()
+      expect(inputTypeSelect().value).toBe('image')
+    })
+  })
 })

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 from urllib.parse import urlencode
 
+from starlette.exceptions import HTTPException
+
 from app.schemas.generation import (
     ActionOutcome,
     BatchAccepted,
@@ -18,6 +20,7 @@ from app.schemas.generation import (
     CancelRequest,
     CancelResult,
     CancelTarget,
+    ErrorDetail,
     GenerationPort,
     JobStatus,
     JobView,
@@ -29,6 +32,13 @@ from app.schemas.generation import (
     RepositoryPort,
     StateSnapshot,
     UpstreamQueueView,
+)
+from app.services.ref_image_store import RefImageStore
+from app.services.ref_image_supply import (
+    RefImageSupplier,
+    RefImageSupplyError,
+    RefImageUploadPort,
+    collect_ref_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +91,8 @@ class GenerationService:
         clock: Callable[[], Any],
         vram_status: Callable[[], dict[str, Any]],
         publish: Callable[[dict[str, Any]], Any] | None,
+        *,
+        ref_image_supplier: RefImageSupplier | None = None,
     ) -> None:
         self.repository = repository
         self.bridge = bridge
@@ -111,6 +123,9 @@ class GenerationService:
         self._last_published_signature: dict[str, Any] | None = None
         self._stopping = False
         self._recovery_pending = False
+        self._ref_supplier: RefImageSupplier | None = ref_image_supplier
+        if self._ref_supplier is None and isinstance(bridge, RefImageUploadPort):
+            self._ref_supplier = RefImageSupplier(RefImageStore.default(), bridge)
 
     async def start(self) -> None:
         if self._worker is not None and not self._worker.done():
@@ -138,6 +153,8 @@ class GenerationService:
         async with self._lock:
             previous = self.repository.find_request(payload.request_id)
             replay = previous is not None or payload.request_id in self._accepted_request_ids
+            if not replay:
+                self._validate_ref_images(payload)
             accepted = BatchAccepted.model_validate(self.repository.accept_batch(payload))
             if not replay and len(accepted.job_ids) != len(payload.items):
                 # The repository has committed already; preserve its acceptance and
@@ -161,6 +178,32 @@ class GenerationService:
         self._wake.set()
         await self._publish_snapshot()
         return accepted.model_dump(mode="json")
+
+    def _validate_ref_images(self, payload: BatchRequest) -> None:
+        """Reject the whole batch (422) when a referenced image is missing from the store.
+
+        Existing images are touched by claim so GC cannot remove them before commit.
+        """
+        ref_ids: list[str] = []
+        for item in payload.items:
+            for ref_id in collect_ref_ids(item.graph):
+                if ref_id not in ref_ids:
+                    ref_ids.append(ref_id)
+        if not ref_ids:
+            return
+        if self._ref_supplier is None:
+            missing = ref_ids
+        else:
+            missing = self._ref_supplier.store.claim(ref_ids)
+        if missing:
+            detail = ErrorDetail(
+                code="ref_image_not_found",
+                message="参照画像がストアに存在しません: " + ", ".join(missing),
+                outcome="failed",
+                request_id=payload.request_id,
+                job_id=None,
+            )
+            raise HTTPException(status_code=422, detail=detail.model_dump(mode="json"))  # type: ignore[arg-type]  # router reads the dict envelope
 
     async def cancel(self, job_id: str) -> CancelResult:
         result = await self.cancel_operation(
@@ -688,8 +731,31 @@ class GenerationService:
                     logger.exception("Could not mark generation %s as submitting", item.job_id)
                     continue
                 await self._publish_snapshot()
+                graph = item.graph
+                if collect_ref_ids(graph):
+                    try:
+                        if self._ref_supplier is None:
+                            raise RefImageSupplyError("参照画像を ComfyUI へ供給できる経路がありません")
+                        graph = await self._ref_supplier.resolve(graph)
+                    except RefImageSupplyError as exc:
+                        self.repository.transition(
+                            item.job_id,
+                            "failed",
+                            failure={"reason": str(exc), "outcome": "failed"},
+                            finished_at=self._now(),
+                        )
+                        await self._publish_snapshot()
+                        continue
+                    except asyncio.CancelledError:
+                        self.repository.transition(
+                            item.job_id,
+                            "failed",
+                            failure={"reason": "上流投入前にサービスが停止しました", "outcome": "failed"},
+                            finished_at=self._now(),
+                        )
+                        raise
                 try:
-                    response = await self.bridge.submit(item.graph)
+                    response = await self.bridge.submit(graph)
                 except asyncio.CancelledError:
                     self.repository.transition(
                         item.job_id,

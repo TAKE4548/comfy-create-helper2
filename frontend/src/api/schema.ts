@@ -2504,6 +2504,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ref-images/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Ref Image */
+        post: operations["upload_ref_image_api_ref_images_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ref-images/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Ref Image */
+        post: operations["import_ref_image_api_ref_images_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ref-images/{ref_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ref Image Thumbnail */
+        get: operations["get_ref_image_thumbnail_api_ref_images__ref_id__thumbnail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ref-images/{ref_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ref Image */
+        get: operations["get_ref_image_api_ref_images__ref_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2864,6 +2932,11 @@ export interface components {
             name?: string | null;
             /** Entries */
             entries?: components["schemas"]["BindingRuleEntryCreate"][] | null;
+        };
+        /** Body_upload_ref_image_api_ref_images_upload_post */
+        Body_upload_ref_image_api_ref_images_upload_post: {
+            /** File */
+            file: string;
         };
         /** Body_upload_snapshot_image_api_snapshots_upload_post */
         Body_upload_snapshot_image_api_snapshots_upload_post: {
@@ -4380,6 +4453,48 @@ export interface components {
             roi: {
                 [key: string]: unknown;
             };
+        };
+        /** RefImageImportRequest */
+        RefImageImportRequest: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "history" | "snapshot";
+            /** Filename */
+            filename?: string | null;
+            /**
+             * Subfolder
+             * @default
+             */
+            subfolder: string;
+            /**
+             * Type
+             * @default output
+             * @enum {string}
+             */
+            type: "output" | "temp";
+            /** Snapshot Id */
+            snapshot_id?: number | null;
+        };
+        /** RefImageRead */
+        RefImageRead: {
+            /** Token */
+            token: string;
+            /** Ref Id */
+            ref_id: string;
+            /** Media Type */
+            media_type: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Byte Size */
+            byte_size: number;
+            /** View Url */
+            view_url: string;
+            /** Thumbnail Url */
+            thumbnail_url: string;
         };
         /** ReleaseOperation */
         ReleaseOperation: {
@@ -11878,6 +11993,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    upload_ref_image_api_ref_images_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_ref_image_api_ref_images_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefImageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_ref_image_api_ref_images_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefImageImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefImageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ref_image_thumbnail_api_ref_images__ref_id__thumbnail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ref_image_api_ref_images__ref_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
