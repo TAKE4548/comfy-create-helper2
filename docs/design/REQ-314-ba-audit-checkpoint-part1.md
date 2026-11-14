@@ -27,10 +27,10 @@ BA監査・GPU解放記録は `REQ-314-ba-audit.md` に記載する。
 技術的実現性: 5タブ、履歴、ARIA、目的別再配置、翻訳条件表示、モバイルは既存frontend内で実現可能。
 ただし「7種類」と「Backend/LM Studio URL編集」は現行契約と矛盾し、全AC無条件達成の判定は不可。
 
-Workspace/Git root: `C:/Users/audih/ws/comfy-create-helper2`。
+Workspace/Git root: `<REPO_ROOT>`。
 対象: `frontend/src/pages/SettingsPage.tsx`、同名サブディレクトリ、既存共通row。
 Backend/systemは証拠読取のみ。Git root mismatchなし。外部へのファイル編集は禁止。
-GLOBAL_SCRIPTSはcontextのGLOBAL_ROOTから `C:/Users/audih/.gemini/antigravity/scripts` に展開済み。共有scriptはプロトコルで明示された実行に限る。
+GLOBAL_SCRIPTSはcontextのGLOBAL_ROOTから `<GLOBAL_HELPERS>` に展開済み。共有scriptはプロトコルで明示された実行に限る。
 root AGENTS.mdは存在せず、ユーザー提供Context Resolution Directiveと `.agents/context.md` を適用。
 dirtyな既存REQ-316 plan・Task Card等を保持し、REQ-314は独立節/独立docとして追加。
 この役割では実装sourceを編集しない。

@@ -18,7 +18,7 @@ AC-1は、frontendで既定の `npm test` を連続5回実行し、各回で `Ge
 
 ## Boundary and SSoT Impact
 
-workspace/git rootは `C:/Users/audih/ws/comfy-create-helper2`。frontend、backend、docsはいずれもこの配下。Git_Root_Mismatch=No、外部への編集禁止。設計はfrontendのテストとdocsに限定する。グローバル手順・監査スクリプトは `.agents/context.md` のGLOBAL_SCRIPTSを解決した `C:/Users/audih/.gemini/antigravity/scripts` を使う。
+workspace/git rootは `<REPO_ROOT>`。frontend、backend、docsはいずれもこの配下。Git_Root_Mismatch=No、外部への編集禁止。設計はfrontendのテストとdocsに限定する。グローバル手順・監査スクリプトは `.agents/context.md` のGLOBAL_SCRIPTSを解決した `<GLOBAL_HELPERS>` を使う。
 
 `doc_mapper.py docs/specs docs/backlog/pbi/active/REQ-344.md` とGeneratePage本体の指定は双方とも一致なし。限定した文字列検索から `SPEC_GENERATE.md` を特定した。この正本はレイアウト、workflow依存の生成ボタン、プリセット同期・自動保存の契約を保持する。実装完了時には正本にREQ-344の回帰テスト方針と設計・検証計画リンクを追記する。API契約・schemaを変更しないためopenapi_parserは不要。
 

@@ -20,11 +20,11 @@ related_paths:
 代表カード3枚と補足26枚を組み合わせる範囲で全29の契約を対象とする。補足開始前は全カードの自動監査完了とは扱わない。
 
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2'
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 900 --unload-after ba-audit --target docs/design/REQ-333-design-audit-input.md
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 900 --unload-after ba-audit --target docs/design/REQ-333-design-contract-audit-input.md
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+Set-Location '<REPO_ROOT>'
+python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 900 --unload-after ba-audit --target docs/design/REQ-333-design-audit-input.md
+python <GLOBAL_HELPERS>/local_model_adapter.py unload
+python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 900 --unload-after ba-audit --target docs/design/REQ-333-design-contract-audit-input.md
+python <GLOBAL_HELPERS>/local_model_adapter.py unload
 ```
 
 実推論・明示unloadはrequire_escalatedで行う。第一実出力はREQ-333-design-audit-output.txtへ保存。第一完了直後にexplicit unload、その後に補足推論を開始し、完了直後にexplicit unloadする。途中で別推論を並行しない。

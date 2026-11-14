@@ -30,7 +30,7 @@ Vitest mockではAPI呼出契約を検証するが実翻訳・CSS寸法・WS通�
 ## Gate 1 / Gate 2 Commands
 PowerShell、repo frontend:
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx
 npx vitest run src/pages/__tests__/SettingsPage.test.tsx src/pages/__tests__/SettingsPage.req314.test.tsx src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx src/pages/SettingsPage/components/__tests__/ThumbnailSettingsSection.test.tsx

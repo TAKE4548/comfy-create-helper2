@@ -47,7 +47,7 @@ export const translateApi = {
 debounce fake timer、空白抑止、方向payload、provider変更/無効化/連続入力の遅延レスポンス逆転、失敗/再試行を検証。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx
 ```
@@ -73,8 +73,8 @@ depends_on: [REQ-314-T1, REQ-314-T2, REQ-314-T3, REQ-314-T4, REQ-314-T5, REQ-314
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/__tests__/SettingsPage.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage.tsx`
+- `<REPO_ROOT>/frontend/src/pages/__tests__/SettingsPage.test.tsx`
 依存: REQ-314-T1, REQ-314-T2, REQ-314-T3, REQ-314-T4, REQ-314-T5, REQ-314-T11。所有 2 ファイル、実装＋局所テストの追加削除合計 290 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -137,7 +137,7 @@ type DetailsState = { prompt: boolean; dialogue: boolean }
 9ACのカード帰属・非選択focus不可・draft往復保持・詳細v2・既存tone CRUDテストをBrowserRouterで適応。useSystemStats mock/store更新でVRAM値追従とunmount cleanup呼出を確認。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/__tests__/SettingsPage.test.tsx
 ```
@@ -163,8 +163,8 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/SpeechToneSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/SpeechToneSection.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx`
 依存: なし。所有 2 ファイル、実装＋局所テストの追加削除合計 230 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -223,7 +223,7 @@ export interface SpeechTonePresetModalProps { mode: 'create' | 'edit'; initial?:
 表示順が読める、長文ラベル、edit/delete正確ID、modal作成/保存/キャンセル、空一覧を検証。CSS実測はT12。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx
 ```

@@ -103,9 +103,9 @@ related_paths:
 # REQ-316: 全プロンプト欄の生成時メタ情報
 
 ## Boundary Audit
-- WORKSPACE_ROOT / Git root: C:/Users/audih/ws/comfy-create-helper2（git -c safe.directory=... rev-parse で確認）。
+- WORKSPACE_ROOT / Git root: <REPO_ROOT>（git -c safe.directory=... rev-parse で確認）。
 - Target_Paths: 同ルートのfrontend/、backend/、docs/。アプリケーション調査・変更対象に外部パスなし。Git_Root_Mismatch: No。
-- GLOBAL_ROOTの<USER_HOME>はC:/Users/audihに展開、GLOBAL_SCRIPTSはC:/Users/audih/.gemini/antigravity/scripts。開発者指定の役割・スキルとそのCLIだけを外部から読み取り/実行した。
+- GLOBAL_ROOTの<USER_HOME>は<USER_HOME>に展開、GLOBAL_SCRIPTSは<GLOBAL_HELPERS>。開発者指定の役割・スキルとそのCLIだけを外部から読み取り/実行した。
 - 調査時に他REQの作業差分あり。REQ-316以外の編集を保存・変更しない。本設計作業の編集はdocs/とimplementation_plan.mdに限定。
 - 実現性: AC-1〜12は通常のマッピング済みワークフローで実現可能。既存画像の失われた内容・名前・生成時欄集合は復元不能なので曖昧性を表示する。
 
@@ -218,7 +218,7 @@ related_paths:
 
 ## 対象と実施条件
 人間の設計承認後に実装担当/QAが実行する。設計段階ではアプリケーションテスト未実行。生成UIのtextarea mappingsを対象とし、保存済みSnapshot.paramsを後日閲覧の正本とする。未保存履歴の200/1000件保持は維持する。
-PowerShell作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。各コマンドは新しいシェルか指定作業ディレクトリから実行する。
+PowerShell作業ディレクトリ: <REPO_ROOT>。各コマンドは新しいシェルか指定作業ディレクトリから実行する。
 
 ## Gate 1 / 静的検証
 frontend/で `npm run typecheck`。backendにアプリ実装変更はない。backendの静的検証はcoordinatorの既存baselineに従う。
@@ -432,7 +432,7 @@ export interface Workflow {
 ## 受入・検証
 AC-1/2/3/6/7/8/11/12。5種類以上の任意role、negative、重複名、2000文字＋末尾marker、空欄/null、不正JSON/未来version/欠落fields、legacy arbitrary role、破損local→server、assets欠落、server ID不一致。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -535,7 +535,7 @@ queuePromptのmetadata型にworkflowId?: numberを追加（paramValuesのRecord<
 ## 受入・検証
 AC-1/2/4/6/9/11。単一/2セット×2バッチ、無効タグ除去、Anima、param sync slave、有効値欠落時デフォルト、generation中workflow切替、store/graphに予約キーが漏れないこと。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -636,7 +636,7 @@ queuePrompt開始時に受け取ったmetadataとworkflowIdを複製して固定
 ## 受入・検証
 予約JSON/全通常値が両保存先で等値。待機中selectedWorkflow変更、local QuotaExceededでもserver呼出、server拒否でもlocal保持、両失敗の通知、キューは1回/成功ID維持。既存200件LRUテストを維持。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -737,7 +737,7 @@ getPromptViewを使い、positivePrompt/negativePromptのfindによる2欄の表
 ## 受入・検証
 AC-1〜4/6〜8/10〜12。任意5欄＋negative、空欄/null、2000文字末尾、日本語/改行/重み/HTML、snapshot優先空辞書、後日欄追加、旧Quality＋seed保持、前画像→次画像、API失敗。スクロール到達性はE2Eで検証。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -838,7 +838,7 @@ URLのtごとにresolveRecordedMetadataを呼ぶ。params/assetを対象画像�
 ## 受入・検証
 AC-4/5/7/8。生成後全入力変更して保存、キャッシュ削除serverのみ、破損local、assetsなし、両エラー/tなし、画像A/Bの別params・workflow、旧記録保持、空params保存、保存後metadata削除。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -937,7 +937,7 @@ loadSnapshotParams(snapshotParams: Record<string,any>)のObject.entriesでPROMPT
 ## 受入・検証
 通常prompt/空文字/seedは復元、予約キーだけ除外、元snapshot不変、未知versionや不正JSONも除外。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 Set-Location frontend
 npm run typecheck
@@ -1038,7 +1038,7 @@ def save_prompt_metadata(payload: PromptMetadataCreate, db: Session = Depends(ge
 ## 受入・検証
 AC-3/5/6/10。JSON文字列を二重encodeしない、長文末尾/改行/日本語、旧params互換、snapshot独立性。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 $env:PYTHONPATH = 'backend'
 backend/.venv/Scripts/python -m pytest backend/tests/test_prompt_metadata.py backend/tests/test_snapshots.py -v
@@ -1138,7 +1138,7 @@ SPEC_GENERATE §6/6-2、SPEC_HISTORY §4-1を本設計の確定実装へ同期�
 ## 受入・検証
 AC-1〜12の要件と保持制約が正本と矛盾しない。自動テストの代替ではなく文書整合確認。
 legacyで現行workflow/現在入力を補完しない。''は「空欄」、null/欠落は「未記録」。unknown/incompleteは「未記録の項目がある可能性があります」。完全性を勝手にcompleteにしない。
-作業ディレクトリ: C:/Users/audih/ws/comfy-create-helper2。PowerShell:
+作業ディレクトリ: <REPO_ROOT>。PowerShell:
 ```powershell
 rg -n 'REQ-316|全プロンプト|未記録|200|1000|__prompt_surgeon_metadata_v1' docs/specs/SPEC_GENERATE.md docs/specs/SPEC_HISTORY.md
 ```

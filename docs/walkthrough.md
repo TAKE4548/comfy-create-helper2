@@ -34,7 +34,7 @@ REQ-424「生成キューの単一キャンセル即時実行と3秒間アンド
 ### Gate 2: フルテストスイート Baseline (Full Discovery Suite & Test Hygiene)
 - **結果**: **PASS (0 failures across all tests)**
 - **実行証跡**:
-  - Test Hygiene Check: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-424` -> **PASS (0 ticket-named test files)**
+  - Test Hygiene Check: `python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-424` -> **PASS (0 ticket-named test files)**
   - Frontend Full Suite: `npm.cmd --prefix frontend test -- --run` -> **PASS (251 test files passed, 2811 tests passed in 87.13s)**
   - Backend Full Suite: `backend\.venv\Scripts\python -m pytest -n auto` -> **PASS (884 passed in 27.38s)**
 

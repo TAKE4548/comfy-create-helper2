@@ -33,7 +33,7 @@
 
 ### ローカルモデル QA 監査
 
-- コマンド: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-347-test-plan.md`
+- コマンド: `python <GLOBAL_HELPERS>\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-347-test-plan.md`
 - 実行設定: adapterが使用モデルを `qwen/qwen3.5-9b` と確認。`LOCAL_AUDIT_REASONING_EFFORT=none` を設定、context 32768を明示。model output traceはQ6_Kを記録。audit exit 0。
 - 保存した完全なraw output: [REQ-347-final-qa-audit.log](REQ-347-final-qa-audit.log)。raw verdictは **FAIL (Critical Ambiguities Detected)**、Statusは “Do Not Execute. Requires Refactoring before any test automation can be generated or run.”。主な指摘は外部監査履歴への依存、主観的/数値未定義のGate 3基準、スクリーンショット自己申告の検証loop、draftと過去の監査ラウンドの時系列混同、fixture寸法/長さ/API payloadの不足。これはraw audit結果として保持し、PASSに読み替えない。Architect/Coordinatorがトリアージする。
 - この QA audit verdict はr9-r11改訂前のその時点のtest-planを対象にしたhistorical raw resultであり、後の改訂を監査した結果とは混同しない。raw verdict/statusは原文のまま保持され、Architectのr9応答では再現性指摘を証拠別に評価した。

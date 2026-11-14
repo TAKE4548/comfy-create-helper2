@@ -34,8 +34,8 @@ title: IDBトランザクション・検証・統合の基盤を実装
 
 ## Ownership and Scope
 以下の既存承認済み2ファイルだけを所有する。まだsourceファイルは存在しないためこのTaskで新規作成する。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/queryCachePersister.ts
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/__tests__/queryCachePersister.test.ts
+- <REPO_ROOT>/frontend/src/utils/queryCachePersister.ts
+- <REPO_ROOT>/frontend/src/utils/__tests__/queryCachePersister.test.ts
 
 旧T2の保存処理・検証・mergeを担当し、queue/coalescingは新T8へ分ける。T8は同じファイルの後続変更なので並行dispatchしない。
 T1はdone、package/lockにfake-indexeddb 6.2.5を確認済み。充足済み前提として保持し再dispatchしない。
@@ -119,7 +119,7 @@ export interface PersistQueryClientRootOptions {
 - [ ] normal/TTL9-11分/schema/hash/clock/Quota/Security/abort/blocked/timeout/clone/versionchangeをparameterized caseで確認。store.write完了はawait transaction completeを使い、将来T8の1秒待ちにも依存しない観測にする。
 
 ## Verification and Handover
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数追加なし。
 ```powershell
 npx vitest run src/utils/__tests__/queryCachePersister.test.ts -t 'REQ-332-T2'
 npm run typecheck
@@ -154,8 +154,8 @@ depends_on: [REQ-332-T2]
 
 ## Ownership and Scope
 以下の承認済み2ファイルのT2成果を後続変更する。新規sourceファイル・依存package・ACは追加しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/queryCachePersister.ts
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/__tests__/queryCachePersister.test.ts
+- <REPO_ROOT>/frontend/src/utils/queryCachePersister.ts
+- <REPO_ROOT>/frontend/src/utils/__tests__/queryCachePersister.test.ts
 
 旧T2のqueue/coalescing要件を移管した分割。人間のarchitecture承認は継続適用される。
 T2と同じファイルを所有するためT2完了後に直列実装。T2のtransaction/validation/mergeや他担当の変更を戻さない。
@@ -237,7 +237,7 @@ export interface PersistQueryClientRootOptions {
 - [ ] 完了後にのみT3のApp接続が着手できる。新Cardのready化は物理更新完了後の状態整理のみであり、engineer dispatchの指示ではない。
 
 ## Verification and Handover
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数追加なし。
 ```powershell
 npx vitest run src/utils/__tests__/queryCachePersister.test.ts -t 'REQ-332-T8'
 npx vitest run src/utils/__tests__/queryCachePersister.test.ts

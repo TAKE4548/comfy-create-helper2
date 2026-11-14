@@ -115,6 +115,6 @@
 ---
 
 ## 4. ツール主導監査 (Tool-Driven Audit)
-- **BA論理監査**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit`
-- **GPU メモリ解放**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload`
+- **BA論理監査**: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit`
+- **GPU メモリ解放**: `python <GLOBAL_HELPERS>\local_model_adapter.py unload`
 

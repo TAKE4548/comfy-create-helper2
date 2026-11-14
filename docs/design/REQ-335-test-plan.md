@@ -145,7 +145,7 @@ Tier 1: 静的/契約・高速単体、Tier 2: 実SQLite/実サービス統合�
 
 ## 6. 検証コマンド（実行順）
 
-作業ディレクトリは WORKSPACE_ROOT (`C:\Users\audih\ws\comfy-create-helper2`)。Windows の Git Bash/PowerShell 双方で動く表記にする。
+作業ディレクトリは WORKSPACE_ROOT (`<REPO_ROOT>`)。Windows の Git Bash/PowerShell 双方で動く表記にする。
 
 **Gate 1（静的・高速）**
 ```

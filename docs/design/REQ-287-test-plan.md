@@ -106,6 +106,6 @@
 ## 4. ツール主導監査 (Tool-Driven Audit)
 
 - **ビジネスアナリスト監査 (BA Audit)**:
-  - コマンド: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit`
+  - コマンド: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit`
   - 監査対象: REQ-287 の要件網羅性、1コンポーネント1ファイル化の粒度、下位互換性。
 

@@ -78,7 +78,7 @@ Exit code: 0
 
 ### Gate 2: Full Test Suite Baseline
 ```
- RUN  v1.6.1 C:/Users/audih/ws/comfy-create-helper2/frontend
+ RUN  v1.6.1 <REPO_ROOT>/frontend
 
  Test Files  239 passed (239)
       Tests  2418 passed (2418)

@@ -12,7 +12,7 @@ AC受入検証はPASSです。最終QA監査は、最新のexact-countテスト�
 |---|---|---|
 | Gate 1 | `cd frontend; npm run typecheck` | PASS、終了コード0 |
 | Gate 2 | `cd frontend; npx vitest run --reporter=dot` | PASS、230 files / 2142 tests、失敗0（AC追補前の全suite実行。追補後は下記REQ-359対象テストを再実行） |
-| Gate 2 hygiene | `python C:\Users\audih\.gemini\antigravity\scripts\workflow_validator.py test-hygiene REQ-359` | FAIL、終了コード1。既存の複数ticket-named test file違反を列挙。REQ-359対象の2ファイルはticket-namedではない |
+| Gate 2 hygiene | `python <GLOBAL_HELPERS>\workflow_validator.py test-hygiene REQ-359` | FAIL、終了コード1。既存の複数ticket-named test file違反を列挙。REQ-359対象の2ファイルはticket-namedではない |
 | Gate 3 対象 | `npx vitest run src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts -t "REQ-359/AC-" --reporter=dot` | PASS、3 passed / 1 skipped。ACT警告あり |
 | Gate 3 対象 | `npx vitest run src/utils/__tests__/wiringStageGroups.test.ts -t "REQ-359/AC-4" --reporter=dot` | PASS、1 passed / 12 skipped |
 | Gate 3 ブラウザ初回 | `http://127.0.0.1:5173/` を開き、indexを確認 | Generate/READYを確認。workflowなしのため選択切替とConsole確認は未完了 |
@@ -20,8 +20,8 @@ AC受入検証はPASSです。最終QA監査は、最新のexact-countテスト�
 | Gate 3 隔離ブラウザ再検証 | 一時backend/SQLiteとisolated headless Chromeでroot、workflow 1 (Anima)、workflow 2 (Illus)を検証 | PASS。3ケースすべてCDP Runtime exceptions=0、console.error=0。rootでUpload prompt、workflow 1でAnima checkbox checked、workflow 2でunchecked。検証データは使い捨てDBのみ |
 | Gate 3 追補検証 | hook test AC-1〜3、および `npm run typecheck` を再実行 | PASS、hook 3 passed / 1 skipped、typecheck終了コード0。非同期query/store更新にReact `act(...)` 警告あり |
 | Gate 3 追補検証 | `npx vitest run src/utils/__tests__/wiringStageGroups.test.ts -t "REQ-359/AC-4"` を再実行 | PASS、1 passed / 12 skipped |
-| 最終QA監査 | `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-359-test-plan.md` | 1回のみ実行、終了コード0。model=`qwen/qwen3.5-9b`、Q6_K、verdict=`FAIL (Critical Ambiguities Detected)`。この監査は後述のexact-count追記前。再監査は禁止のためraw verdictを保持し、妥当指摘は後続編集で対処済み |
-| QA後処理 | `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload` | PASS。`LM Studio reports no models loaded.` |
+| 最終QA監査 | `python <GLOBAL_HELPERS>\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-359-test-plan.md` | 1回のみ実行、終了コード0。model=`qwen/qwen3.5-9b`、Q6_K、verdict=`FAIL (Critical Ambiguities Detected)`。この監査は後述のexact-count追記前。再監査は禁止のためraw verdictを保持し、妥当指摘は後続編集で対処済み |
+| QA後処理 | `python <GLOBAL_HELPERS>\local_model_adapter.py unload` | PASS。`LM Studio reports no models loaded.` |
 
 ## QA監査の構造化トリアージ
 

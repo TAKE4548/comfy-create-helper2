@@ -9,7 +9,7 @@
 | 項目 | 値 |
 |---|---|
 | PBI / Task | REQ-344 / REQ-344-T11 |
-| cwd | `C:/Users/audih/ws/comfy-create-helper2/frontend` |
+| cwd | `<REPO_ROOT>/frontend` |
 | TypeScript test source SHA256 | `B045788AEE942412486134D5E472B05F5293166BFB50D2883B94B82F8DA64793` |
 | Node / npm | `v18.16.1` / `9.7.1` |
 | 対象テスト宣言数 | 13 |
@@ -68,7 +68,7 @@ T11は未達のためT12へ進めない。再試行には環境のrealpath colle
 
 ## Attempt 2 (elevated collection context)
 
-Attempt 1上記記録とraw logは保持し、集計へ混ぜない。coordinatorは制限contextでのEPERMをsandbox収集障害と判断し、attempt 2を最初から同一のelevated contextで行うよう指示した。source変更なし、HEAD `d38568142c73e46521bb4d503224562fb133dfac`、source SHA256 `B045788AEE942412486134D5E472B05F5293166BFB50D2883B94B82F8DA64793`、cwd `C:/Users/audih/ws/comfy-create-helper2/frontend`、Node `v18.16.1` / npm `9.7.1`、既定command `npm test`。retry/pool/timeout設定とsource SHAは変更していない。
+Attempt 1上記記録とraw logは保持し、集計へ混ぜない。coordinatorは制限contextでのEPERMをsandbox収集障害と判断し、attempt 2を最初から同一のelevated contextで行うよう指示した。source変更なし、HEAD `d38568142c73e46521bb4d503224562fb133dfac`、source SHA256 `B045788AEE942412486134D5E472B05F5293166BFB50D2883B94B82F8DA64793`、cwd `<REPO_ROOT>/frontend`、Node `v18.16.1` / npm `9.7.1`、既定command `npm test`。retry/pool/timeout設定とsource SHAは変更していない。
 
 | Run | Run ID | Target collected/pass/fail/skip | Full suite | 結果 |
 |---:|---|---|---|---|
@@ -111,7 +111,7 @@ Gate 1、Gate 2、Gate 3、およびAC-1の実行条件はPASS。既定の`npm t
 | 項目 | 観測値 |
 |---|---|
 | 基準HEAD | `d38568142c73e46521bb4d503224562fb133dfac` |
-| cwd / command | `C:/Users/audih/ws/comfy-create-helper2/frontend` / `npm test` |
+| cwd / command | `<REPO_ROOT>/frontend` / `npm test` |
 | Node / npm | `v18.16.1` / `9.7.1` |
 | REQ-344対象SHA256 | `B045788AEE942412486134D5E472B05F5293166BFB50D2883B94B82F8DA64793` |
 | REQ-355対象SHA256 | `C43A581BA28B94C85DB7F09CF2BF9C3BB0AE2041D6407D455B17FF5FE01FF7B1` |

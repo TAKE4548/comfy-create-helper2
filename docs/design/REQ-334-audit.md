@@ -43,7 +43,7 @@ OpenAPIは現状118 paths。Playground等の型付き応答とmigration/API test
 
 モデルはテスト計画の「挙動確認」や証拠の記録要件に曖昧さが残るとして、具体指標/API count/hash、証拠画像のpath/hash、console output、Tab focus順、browser timeoutを明記する改善案を提示した。これらは現行102 ACの実測/実行証拠に対する具体的な製品不具合指摘ではなく、計画の監査性を高める提案。ただし結果が条件付き合格である事実を保持し、`COMPLIANT`には読み替えない。全文はログを参照。
 
-監査完了直後に `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload` を実行した。`.tmp/req334-qa/local-qa-unload-final.log` はexit 0で、adapterは対象モデルを含む全モデルをLM Studioからunloadし「VRAM freed」と報告した。
+監査完了直後に `python <GLOBAL_HELPERS>/local_model_adapter.py unload` を実行した。`.tmp/req334-qa/local-qa-unload-final.log` はexit 0で、adapterは対象モデルを含む全モデルをLM Studioからunloadし「VRAM freed」と報告した。
 
 **GPU全体のVRAM 100%解放は未検証。** `nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits` は `nvidia-smi` command not found (exit 1)。unload結果はadapter管理下のmodel unloadの確認であり、他processのGPU使用量ゼロの証明ではない。ユーザー所有のComfyUI/GPU processは停止していない。
 

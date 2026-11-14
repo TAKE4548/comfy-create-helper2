@@ -37,5 +37,5 @@
   - 期待値: `toSafeImageUrl` / `toThumbnailUrl` により `/api/comfy/thumbnail?filename=xxx.png` にフォールバックされ、画像破損なく表示されること (REQ-267 回帰防止)。
 
 ## 4. ツール主導監査 (Tool-Driven Audit)
-- **推論 BA / QA 監査**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit` による論理的境界値・不整合の検証。
-- **VRAM クリーンアップ**: 監査直後に `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload` を実行し、完全解放すること。
+- **推論 BA / QA 監査**: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit` による論理的境界値・不整合の検証。
+- **VRAM クリーンアップ**: 監査直後に `python <GLOBAL_HELPERS>\local_model_adapter.py unload` を実行し、完全解放すること。

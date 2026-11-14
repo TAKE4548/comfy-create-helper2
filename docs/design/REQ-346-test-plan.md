@@ -152,7 +152,7 @@ AC-8 は F（ハーネス上の高い将来アクション）で直接検証す�
 対象サブシステムは frontend のみ（backend／API 変更なし）。順序: 静的 → 全スイート → シナリオ／Red Team。
 
 ```
-# Gate 1: 静的・高速（cwd: C:\Users\audih\ws\comfy-create-helper2）
+# Gate 1: 静的・高速（cwd: <REPO_ROOT>）
 cd frontend; npm run typecheck
 cd ..; backend\.venv\Scripts\python scripts/verify_ui_invariants.py
 backend\.venv\Scripts\python scripts/verify_test_naming.py --strict

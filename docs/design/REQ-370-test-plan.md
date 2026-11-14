@@ -122,8 +122,8 @@
 
 ```bash
 # BA Audit (Step 3 実行)
-python C:\Users\audih\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py --context-length 32768 ba-audit docs/design/REQ-370.md docs/design/REQ-370-test-plan.md docs/backlog/task/active/REQ-370-T1.md docs/backlog/task/active/REQ-370-T2.md docs/backlog/task/active/REQ-370-T3.md
+python <USER_HOME>\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py --context-length 32768 ba-audit docs/design/REQ-370.md docs/design/REQ-370-test-plan.md docs/backlog/task/active/REQ-370-T1.md docs/backlog/task/active/REQ-370-T2.md docs/backlog/task/active/REQ-370-T3.md
 
 # VRAM 解放
-python C:\Users\audih\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py unload
+python <USER_HOME>\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py unload
 ```

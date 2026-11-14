@@ -1,7 +1,7 @@
 # REQ-314 BA Audit: part 5/8
 Audit this fragment of the complete design, test plan and all 14 Task Cards. Other definitions may be in other fragments; do not invent defects solely from missing context. State findings with exact artifact/task references. User browser tests are manual and excluded from autonomous checks; typecheck/Vitest remain. D1: six real prompt keys versus AC-4 seven is an explicit unresolved human decision. D2: Backend/LM Studio URL editing versus unchanged API/schema is an explicit unresolved human decision. Do not require approval bypass or falsely mark those AC passed. Review acceptance coverage, logical contradictions, ownership/dependencies, testability and actual new gaps.
 
-python 'C:/Users/audih/.gemini/antigravity/scripts/doc_mapper.py' docs/specs frontend/src/pages/SettingsPage
+python '<GLOBAL_HELPERS>/doc_mapper.py' docs/specs frontend/src/pages/SettingsPage
 git diff --check -- docs/specs/SPEC_SETTINGS.md docs/specs/SPEC_COMMON.md docs/specs/SPEC_SUMMARY.md
 ```
 
@@ -26,8 +26,8 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx`
 依存: なし。所有 2 ファイル、実装＋局所テストの追加削除合計 255 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -93,7 +93,7 @@ export function ServiceConnectionCard(): React.JSX.Element
 Comfy store引数/実効URL、invalidURL抑止、Backend origin health、LM models backend経由/失敗、urlを偽装しない。AC-7原文は未達を記録。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx
 ```
@@ -119,8 +119,8 @@ depends_on: [REQ-314-T1]
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/SettingsTabBar.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/SettingsTabBar.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx`
 依存: REQ-314-T1。所有 2 ファイル、実装＋局所テストの追加削除合計 245 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -178,7 +178,7 @@ export function SettingsTabBar(props: SettingsTabBarProps): React.JSX.Element
 5個tab、選択1個、controls対応、roving tabIndex、循環/Home/End、通常Tab、クリック後focus、長短label契約を検証。幅実測はT12。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx
 ```
@@ -204,8 +204,8 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/LlmSettingsSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/LlmSettingsSection.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx`
 依存: なし。所有 2 ファイル、実装＋局所テストの追加削除合計 290 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context

@@ -10,7 +10,7 @@ Run command was the Task Card focused diagnostic, with `VITE_REQ344_QUERY_DIAGNO
 
 ## Diagnostic Evidence
 
-- Vitest reported `EPERM: operation not permitted, realpath 'C:\Users\audih\ws\comfy-create-helper2\frontend\src\test\setup.ts'` before collection.
+- Vitest reported `EPERM: operation not permitted, realpath '<REPO_ROOT>\frontend\src\test\setup.ts'` before collection.
 - Query diagnostic output, query key/snapshot, observer count, query function, API mock reference, case outcomes, and warning count were not observed. No inference about the query warning or its runtime cause can be made from this run.
 - The three consumer source locations and individual observer ownership were not checked in this run.
 - This matches the separately classified setup/realpath collection environment failure. The raw exception and resolved path are preserved in the linked log.

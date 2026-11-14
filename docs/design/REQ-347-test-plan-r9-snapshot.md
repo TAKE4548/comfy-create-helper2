@@ -10,9 +10,9 @@ related_paths: [docs/design/REQ-347.md, docs/backlog/pbi/active/REQ-347.md, fron
 
 ## Current Execution Context (r9)
 
-workspaceは`C:/Users/audih/ws/comfy-create-helper2`、frontendは同rootの`frontend`。この計画の有効な動作契約はFixtures/各Gate表/本r9のFixture RecipeとMeasurement Oracle。後段の監査履歴は時点証跡であり実行の前提ではない。status:draft/design_gate:pendingは受入完了を意味しない。現在Gate1と有効な全体Gate2再実行はPASS（226 files/2,053 tests）、Gate3は実ブラウザー前提未充足でINCONCLUSIVE。以前の全ケース未実行/未監査等はその時点の記録。
+workspaceは`<REPO_ROOT>`、frontendは同rootの`frontend`。この計画の有効な動作契約はFixtures/各Gate表/本r9のFixture RecipeとMeasurement Oracle。後段の監査履歴は時点証跡であり実行の前提ではない。status:draft/design_gate:pendingは受入完了を意味しない。現在Gate1と有効な全体Gate2再実行はPASS（226 files/2,053 tests）、Gate3は実ブラウザー前提未充足でINCONCLUSIVE。以前の全ケース未実行/未監査等はその時点の記録。
 
-既存lockfileに沿うNode/npmと依存が必要。`Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend`の後にtypecheck/Vitestを実行し、command/exit/全結果を保存する。jsdomのVitest1.6（vite.config.ts）はGate1/2専用。現在ブラウザー接続/5173・8000起動/fixture公開は存在しない。以下のbrowser oracleはrunnerに渡す仕様であり実行済みとしない。
+既存lockfileに沿うNode/npmと依存が必要。`Set-Location <REPO_ROOT>/frontend`の後にtypecheck/Vitestを実行し、command/exit/全結果を保存する。jsdomのVitest1.6（vite.config.ts）はGate1/2専用。現在ブラウザー接続/5173・8000起動/fixture公開は存在しない。以下のbrowser oracleはrunnerに渡す仕様であり実行済みとしない。
 
 ブラウザーGate3の前提は(1)対応する実ブラウザー/制御接続、(2)現在sourceから起動した画面、(3)実DOMの矩形・computedStyle・scrollTop/valueを取得しpixel単位のroot scrollとnative click/Tab/resize/200%zoomを操作できるrunner、(4)隔離したfixture/API応答制御、(5)画像と生観測JSONの保存。いずれか未充足はそのcaseをINCONCLUSIVEにする。存在しないURL/driver/workerへ接続できたと仮定しない。新しいbrowser依存やtool未対応APIを本計画から自動導入しない。
 

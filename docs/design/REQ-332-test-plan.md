@@ -9,7 +9,7 @@ related_paths: [docs/design/REQ-332.md, docs/backlog/pbi/active/REQ-332.md]
 
 ## Baseline Gates
 以下は実装後の予定コマンド。設計段階の実行PASSではない。
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数追加なし。
 Gate 1: `npm run typecheck`。
 Gate 2: `npm test`。全体既知失敗はbaselineと新規失敗を区別し記録する。
 Gate 3: `npx vitest run src/utils/__tests__/queryCachePersister.test.ts src/test/e2e_req332_recovery.test.tsx`。

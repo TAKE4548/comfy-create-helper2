@@ -25,7 +25,7 @@ T1/T2の修正、T3静的解析はTaskとしてdoneだが、T2対象検証は人
 
 ## Boundary and SSoT
 
-workspace rootはC:/Users/audih/ws/comfy-create-helper2。編集は今回も対象テストとdocsに限定する。API、製品component、hook、store、vite.config、setup.tsを変更しない。製品APIの型はlorasApi.getComfyModels: () => Promise<ComfyLoraModel[]>。既定応答[]はこの型の有効な空結果で、実ネットワークを使わない。
+workspace rootは<REPO_ROOT>。編集は今回も対象テストとdocsに限定する。API、製品component、hook、store、vite.config、setup.tsを変更しない。製品APIの型はlorasApi.getComfyModels: () => Promise<ComfyLoraModel[]>。既定応答[]はこの型の有効な空結果で、実ネットワークを使わない。
 
 上流はPBI/既存Generate仕様、T1/T2実装、T3解析、getComfyModels API契約。下流は3observerのqueryFn、REQ-161のDesktop/Mobile、対象全ケース、既定全体検証、T4正本同期。doc_mapperによるPBI/GeneratePage指定は一致なし、限定検索でSPEC_GENERATEを特定したという初回分析を維持する。API/schema変更なしのためopenapi_parser不要。
 

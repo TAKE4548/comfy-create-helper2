@@ -11,7 +11,7 @@ related_paths:
 
 ## Acceptance and Commands
 
-cwd C:/Users/audih/ws/comfy-create-helper2/frontend。npm test = vitest run。
+cwd <REPO_ROOT>/frontend。npm test = vitest run。
 診断コピーは.txtで通常収集外。original test 8件、GeneratePage.test.tsx 13件。
 Gate1: npm run typecheck、exit0。
 局所AC-1:
@@ -76,8 +76,8 @@ AC-3未完了時にREQ-355 PBIをdoneへ移さない。
 QA監査はdev-verifyに従い初回からrequire_escalated、
 localhost LM Studio/CLI利用を理由へ明示:
 ```powershell
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-355-test-plan.md
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-355-test-plan.md
+python <GLOBAL_HELPERS>/local_model_adapter.py unload
 ```
 exit、所見、model/runtime/settings/chunks/elapsedと直後unload exit0を記録。
 監査未実施や指摘未処理は3-Gate PASSに含めない。
@@ -89,7 +89,7 @@ exit、所見、model/runtime/settings/chunks/elapsedと直後unload exit0を記
 ### Run REQ-355-T2-20261013
 
 実行環境: Windows workspace、Node v18.16.1、npm 9.7.1、Vitest 1.6.1。
-検証cwdは`C:/Users/audih/ws/comfy-create-helper2/frontend`。
+検証cwdは`<REPO_ROOT>/frontend`。
 ソースSHA256は実行前後とも
 `C43A581BA28B94C85DB7F09CF2BF9C3BB0AE2041D6407D455B17FF5FE01FF7B1`。
 `SPEC_GENERATE.md` SHA256は

@@ -6,7 +6,7 @@
 - **検証担当**: Tester / Reviewer (`dev-verify`)
 - **検証判定**: **PASS (全ゲート合格・全受入基準充足)**
 - **検証日時**: 2026-10-20
-- **対象リポジトリ**: `c:\Users\audih\ws\comfy-create-helper2`
+- **対象リポジトリ**: `<REPO_ROOT>`
 
 ---
 

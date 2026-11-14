@@ -4,7 +4,7 @@
 - 判定: INCONCLUSIVE。workflow応答のalias欠落は確認したが、listenerのworkspace rootと起動引数を特定できず、backend restart前提を満たさない。
 - FE接続先: `frontend/vite.config.ts:74,80` のproxy targetは `http://127.0.0.1:8000`。
 - Listener: `Get-NetTCPConnection -LocalPort 8000 -State Listen` で `0.0.0.0`, PID `44412`。
-- Listener executable: `Get-Process -Id 44412` は `C:\Users\audih\AppData\Local\Programs\Python\Python312\python.exe`、開始時刻 `2026-10-12 04:49:19`。server-manager設定のworkspace backend venv (`backend\\.venv\\Scripts\\python.exe`) と一致しない。`Get-CimInstance Win32_Process` ではcommand lineを取得できず、外部root使用有無は未確認。
+- Listener executable: `Get-Process -Id 44412` は `<USER_HOME>\AppData\Local\Programs\Python\Python312\python.exe`、開始時刻 `2026-10-12 04:49:19`。server-manager設定のworkspace backend venv (`backend\\.venv\\Scripts\\python.exe`) と一致しない。`Get-CimInstance Win32_Process` ではcommand lineを取得できず、外部root使用有無は未確認。
 - 設定root: `tools/server-manager/config.json` は backend `../../backend`、venv python ` .venv\\Scripts\\python.exe`、起動引数 `-m uvicorn app.main:app --host 0.0.0.0 --port 8000`。
 - 稼働master API: `GET /api/mapping-masters/4` は id=4, param_name=`seed`, fallback_param_names=`[noise_seed]`。
 - 稼働workflow API: `GET /api/workflows/69` のseed mapping id `3545`〜`3551` は全て `master_id=4`、node `1260:1398`, `1260:1396`, `1351`, `1298:1223`, `1283:1216`, `1291:1221`, `1297:1222`。全てのfallback_param_namesが空/null相当。

@@ -78,7 +78,7 @@ mobile表は同一DOM/DNDを維持し、読み上げ意味の実機確認はユ�
 D1/D2は要求と現行契約の矛盾であり、人間承認なしにACを弱めない。
 
 ## Human Design Review Gate
-[dev-design](C:/Users/audih/.gemini/config/skills/dev-design/SKILL.md) Step 2:
+[dev-design](<USER_HOME>/.gemini/config/skills/dev-design/SKILL.md) Step 2:
 「Physically generate all Task Cards ... BEFORE requesting implementation_plan.md approval.」
 および今回のarchitect指示「Return changed designs through the human design review gate」により、
 全物理成果物/監査記録を渡し、D1/D2の決定と設計承認を受けてから実装へ移る。
@@ -105,9 +105,9 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/hooks/useSettingsTab.ts`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/localStorageKeys.ts`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/hooks/useSettingsTab.ts`
+- `<REPO_ROOT>/frontend/src/utils/localStorageKeys.ts`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx`
 依存: なし。所有 3 ファイル、実装＋局所テストの追加削除合計 270 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -166,7 +166,7 @@ export function SettingsPage() {
 初回5hash・hash/LS衝突・無効値・Storage SecurityError・空hash・履歴push/replace・再選択・search保持をBrowserRouterで検証。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx
 ```
@@ -192,8 +192,8 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/BaseModelSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/BaseModelSection.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx`
 依存: なし。所有 2 ファイル、実装＋局所テストの追加削除合計 245 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context

@@ -14,9 +14,9 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/MappingMasterSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/components/SettingsComponents.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/MappingMasterSection.tsx`
+- `<REPO_ROOT>/frontend/src/components/SettingsComponents.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx`
 依存: なし。所有 3 ファイル、実装＋局所テストの追加削除合計 275 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -75,7 +75,7 @@ interface MappingMaster { id: number; role: string; expected_class_types: string
 編集/複製/削除ID・並替ペイロード・長押し・ラベル対応を検証。320/390pxのdrag/多選択はT12チェックリストを使ってユーザーが手動確認する。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx
 ```

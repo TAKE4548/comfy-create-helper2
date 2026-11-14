@@ -84,14 +84,14 @@
 
 - **監査実行コマンド**:
   ```bash
-  python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-364-test-plan.md
+  python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-364-test-plan.md
   ```
 - **使用モデル**: `qwen/qwen3.5-9b` (LM Studio 0.4.25 / ROCm)
 - **実行状況**:
   - モデルのロードは正常に完了（`[Local Audit] Successfully loaded 'qwen/qwen3.5-9b'.`）
   - LM Studio API 推論呼び出し中にソケットタイムアウトが発生（`TimeoutError: timed out` / `LocalModelError: Error querying LM Studio API: timed out`）。
 - **即時 VRAM 解放 (`unload`)**:
-  - コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
+  - コマンド: `python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
   - 実行結果: `[Model Auto-Router] Unloading all loaded models (qwen/qwen3.5-9b) to free VRAM...` / `[Local Audit] LM Studio reports no models loaded.` (Exit code 0)
   - VRAM 解放を確認済み。
 

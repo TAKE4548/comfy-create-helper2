@@ -78,9 +78,9 @@
 ## 4. ツール主導監査 (Tool-Driven Audit)
 
 - **ローカルモデル BA 監査**:
-  - コマンド: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit`
+  - コマンド: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit`
   - 目的: 要求仕様の抜け漏れ、チャタリング境界閾値の妥当性の客観的評価。
 - **[MANDATORY GPU CLEANUP]**:
-  - コマンド: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload`
+  - コマンド: `python <GLOBAL_HELPERS>\local_model_adapter.py unload`
   - 目的: 推論完了直後の VRAM 100% 完全解放。
 

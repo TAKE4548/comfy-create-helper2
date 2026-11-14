@@ -121,5 +121,5 @@ timeout延長、全体直列化、worker制限、skip/retryで合格にしない
 T3は切替評価/必要時の静的解析を記録し親へ返す。T4は対象5回PASSと追加修正不要の判断後に、ログからdocs/design/REQ-344-verification.mdを作成し、SPEC_GENERATEに回帰方針と設計/計画/解析リンクを追加する。根因/成功を実ログにない推測で補完しない。監査はINCONCLUSIVEの既存記録を保持し、改訂T3/T4は再監査済みとしない。
 
 Local QA audit command (verify phase):
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-344-test-plan.md
+python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-344-test-plan.md
 LM Studio localhost/lmsへの接続は初回からelevated sandboxで実行し、完了直後にadapter unloadのexit0を確認する。

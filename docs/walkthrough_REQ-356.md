@@ -87,14 +87,14 @@ etworkGuard.test.ts でブロック動作を検証完了 | **PASS** |
 
 - **使用モデル**: qwen/qwen3.5-9b (LM Studio 0.4.25, context-length 32768, 
 easoning_effort=none)
-- **実行コマンド**: python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-356-test-plan.md
+- **実行コマンド**: python <GLOBAL_HELPERS>\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-356-test-plan.md
 - **監査結果**: ⚠️ **CRITICAL FAILURES DETECTED / UNACCEPTABLE**
 - **主な指摘事項**:
   1. **変数依存・可搬性欠如**: ${GLOBAL_SCRIPTS} や OS 依存の \Scripts 等の環境依存により、実行失敗の抜け道が存在する。
   2. **クリーン状態検証の定量的アサーション不足**: DB クリーン状態やロールバックの検証において、インターセプターの信頼に依存せず、実行前後での直接的な SQL 行数カウントアサーションを明記すべきである。
   3. **事前検証 (Gate 0) の欠如**: ファイル存在確認やツール可用性の Sanity Check が不足している。
 - **GPU リソース解放 (VRAM Cleanup)**:
-  - python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload 実行完了 (Exit code 0)。
+  - python <GLOBAL_HELPERS>\local_model_adapter.py unload 実行完了 (Exit code 0)。
   - lms ps --json の出力が [] であることを確認（※LM Studio 経由のモデルアンロードを確認したものであり、システム全体の全 GPU メモリ解放を主張するものではありません）。
 
 ---

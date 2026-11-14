@@ -19,7 +19,7 @@ AC-3の既知値はI3の固定乱数11/22/33で検証する。稼働時は実際
 
 ## Preconditions and Evidence
 
-コマンドはWindows PowerShell、workspace root `C:\Users\audih\ws\comfy-create-helper2`、既存backend venv・frontend node_modulesを前提とする。本PBIはこのworkspaceの稼働復旧であり、このWindows環境を意図した対象とする。移植性やDocker導入は受入要件に含めない。BEはsqlite memory/dependency override、FEはcaseごとにmock storeを初期化してrandom spyをrestoreする。自動テストでproduction DBを更新しない。
+コマンドはWindows PowerShell、workspace root `<REPO_ROOT>`、既存backend venv・frontend node_modulesを前提とする。本PBIはこのworkspaceの稼働復旧であり、このWindows環境を意図した対象とする。移植性やDocker導入は受入要件に含めない。BEはsqlite memory/dependency override、FEはcaseごとにmock storeを初期化してrandom spyをrestoreする。自動テストでproduction DBを更新しない。
 
 runtimeではFE `http://127.0.0.1:5173` のAPI proxy先がBE `http://127.0.0.1:8000` と一致することを確認する。restart前にlistenerのPID/ancestry/command/executable/workspace起動元、処理中generation jobsと両queueを確認する。実行元が未確定、処理中jobが残る場合はrestartせずINCONCLUSIVE。必要なrestartはworkspace managerのbackendのみを対象とする。DBはmaster4/variant/7 mappingの関連列をread-only照合する。
 
@@ -110,7 +110,7 @@ fallback_param_names:
 
 各ブロックのcwdへ移動し、各行を個別実行して直後の`$LASTEXITCODE`を保存する。期待exitはすべて0。設定/依存環境不足は理由付きINCONCLUSIVEとし、成功と推定しない。
 
-BE cwd `C:\Users\audih\ws\comfy-create-helper2\backend`、Gate 1型検査とGate 3対象API回帰:
+BE cwd `<REPO_ROOT>\backend`、Gate 1型検査とGate 3対象API回帰:
 
 ```powershell
 .\.venv\Scripts\python.exe -m mypy app/routers/workflows.py app/schemas/workflow.py
@@ -118,7 +118,7 @@ BE cwd `C:\Users\audih\ws\comfy-create-helper2\backend`、Gate 1型検査とGate
 .\.venv\Scripts\python.exe -c 'import sys,app.routers.workflows as w; print(sys.executable); print(w.__file__)'
 ```
 
-FE cwd `C:\Users\audih\ws\comfy-create-helper2\frontend`、Gate 1型検査とGate 3対象回帰:
+FE cwd `<REPO_ROOT>\frontend`、Gate 1型検査とGate 3対象回帰:
 
 ```powershell
 npm run typecheck

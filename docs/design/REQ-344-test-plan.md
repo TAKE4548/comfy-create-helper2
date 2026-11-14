@@ -49,7 +49,7 @@ mockはテストresolverで解決するため実network待ちはない。API同�
 
 ## Commands and Gates
 
-cwd: C:/Users/audih/ws/comfy-create-helper2/frontend。
+cwd: <REPO_ROOT>/frontend。
 T10局所:
 ```powershell
 npm run typecheck

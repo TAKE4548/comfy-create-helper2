@@ -74,6 +74,6 @@ tags:
 ---
 
 ## 4. ツール主導監査 (Tool-Driven Audit)
-- **コマンド**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit`
+- **コマンド**: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit`
 - **期待値**: Task Card と設計の整合性、受入基準の充足性が証明されること。
 

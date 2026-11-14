@@ -55,5 +55,5 @@
 ---
 
 ## 4. ツール主導監査 (Tool-Driven Audit)
-- **BA論理監査**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py ba-audit` (実行済)
-- **VRAM解放確認**: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload` (実行済、VRAM 100% 解放確認完了)
+- **BA論理監査**: `python <GLOBAL_HELPERS>\local_model_adapter.py ba-audit` (実行済)
+- **VRAM解放確認**: `python <GLOBAL_HELPERS>\local_model_adapter.py unload` (実行済、VRAM 100% 解放確認完了)

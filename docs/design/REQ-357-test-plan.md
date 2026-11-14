@@ -24,7 +24,7 @@ URL/ブラウザversion/viewport/アプリの版と日時を証拠に記録す�
 
 ## Gate 1 and Local Unit Verification
 
-cwd: C:/Users/audih/ws/comfy-create-helper2/frontend、追加環境変数不要。
+cwd: <REPO_ROOT>/frontend、追加環境変数不要。
 
 ~~~powershell
 npm run typecheck
@@ -117,8 +117,8 @@ T2担当は3-Gate後、既知adapterを使う場合は最初から昇格権限�
 以下はworkspace cwd。context lengthを省略しない。
 
 ~~~powershell
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-357-test-plan.md docs/design/REQ-357-walkthrough.md
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-357-test-plan.md docs/design/REQ-357-walkthrough.md
+python <GLOBAL_HELPERS>/local_model_adapter.py unload
 ~~~
 
 localhost 127.0.0.1:1234 / lms が必要。QAのmodel/runtime/設定/対象/原判定/経過時間を記録。

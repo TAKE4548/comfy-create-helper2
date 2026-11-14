@@ -82,16 +82,16 @@ exit 0。8 files passed、92 tests passed（4.14秒）。代表的な実行証�
 
 ### API契約確認
 
-- `python C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/system/openapi.yaml list-endpoints` はexit 1、`File not found: docs/system/openapi.yaml`。
+- `python <GLOBAL_HELPERS>/openapi_parser.py docs/system/openapi.yaml list-endpoints` はexit 1、`File not found: docs/system/openapi.yaml`。
 - REQ-317はAPI schema変更を含まない。API契約のOpenAPI照合は仕様書欠落により未実施。mocked client testの成功は実APIの確認ではない。
 
 ## ローカルモデルQA監査
 
-**2026-10-05に追加実施済み / 指摘あり（ISSUES_DETECTED）。** ユーザーの実行指示を受け、制限環境の外で `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py qa-audit docs/design/REQ-317-test-plan.md` を実行。ComfyUIの実行中ジョブによるVRAM解放待ちの後、モデルのロードと回答取得に成功した（exit 0）。対象はテスト計画であり、実装コード全体の監査PASSではない。
+**2026-10-05に追加実施済み / 指摘あり（ISSUES_DETECTED）。** ユーザーの実行指示を受け、制限環境の外で `python <GLOBAL_HELPERS>/local_model_adapter.py qa-audit docs/design/REQ-317-test-plan.md` を実行。ComfyUIの実行中ジョブによるVRAM解放待ちの後、モデルのロードと回答取得に成功した（exit 0）。対象はテスト計画であり、実装コード全体の監査PASSではない。
 
 - 指摘: テスト計画の判定条件の具体化、コマンドの明確化、Vitestと実ブラウザE2Eの区別など。
 - 照合: `npm test` は実在する `vitest run` への別名。モデルが提案した `test:unit` / `test:e2e` / `test:ci` は存在しない。IDの大小比較などtimestamp順の要件と一致しない例もあり、提案を自動適用していない。
-- 終了直後に `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload` を実行、exit 0。ツールは全モデル解放・VRAM解放を報告した。GPU全体の使用量は別途計測していない。
+- 終了直後に `python <GLOBAL_HELPERS>/local_model_adapter.py unload` を実行、exit 0。ツールは全モデル解放・VRAM解放を報告した。GPU全体の使用量は別途計測していない。
 - 原文・照合結果: [ローカルQA監査記録](backlog/ba-audit/REQ-317-qa.md)。既存BA監査INCONCLUSIVEは別記録として維持。未検証の実ブラウザ項目が残るため総合判定もINCONCLUSIVEを維持する。
 
 ## `<execution_evidence>`

@@ -16,7 +16,7 @@ related_paths:
 
 ## Gate 1: Typecheck（全対象サブシステム）
 
-各 Task Card が所有する既存テストを拡張し、振る舞いを確認する。スタイルclass名のassertだけで合格にしない。frontend cwd (`C:/Users/audih/ws/comfy-create-helper2/frontend`) で `npm run typecheck` と `npm test` を実施する。対象ファイルの局所テストはカードに記載する実在コマンドで実行する。backend変更カードは `backend\.venv\Scripts\python -m pytest <対象テスト>` と `mypy backend` を適用する。契約/APIを追加する場合は契約テストとOpenAPI整合を追加する。
+各 Task Card が所有する既存テストを拡張し、振る舞いを確認する。スタイルclass名のassertだけで合格にしない。frontend cwd (`<REPO_ROOT>/frontend`) で `npm run typecheck` と `npm test` を実施する。対象ファイルの局所テストはカードに記載する実在コマンドで実行する。backend変更カードは `backend\.venv\Scripts\python -m pytest <対象テスト>` と `mypy backend` を適用する。契約/APIを追加する場合は契約テストとOpenAPI整合を追加する。
 
 | Phase | 単体・型検査の重点 | 対象AC |
 |---|---|---|

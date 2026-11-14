@@ -3,7 +3,7 @@
 ## Execution
 
 - Target: `docs/design/REQ-316-test-plan.md`
-- Command: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 300 --unload-after qa-audit docs/design/REQ-316-test-plan.md`
+- Command: `python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 300 --unload-after qa-audit docs/design/REQ-316-test-plan.md`
 - Captured exec session: `29042`; process exit code: `0`.
 - Full stdout and terminal exit marker: [execution log](REQ-316-qa-audit-execution.log).
 - Model: `qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored`.

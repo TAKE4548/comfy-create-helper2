@@ -129,7 +129,7 @@ IG7: 同一fixtureにnormal(session A/B)、Studio、scope不明legacy、BE未投
 各カードの局所pytest/vitestを実装後に実行する。以下は統合チェックの候補。新規ファイルはカード実装後に実行し、設計工程で実行済みと扱わない。
 
 ```powershell
-Set-Location 'C:\Users\audih\ws\comfy-create-helper2'
+Set-Location '<REPO_ROOT>'
 .\backend\.venv\Scripts\python.exe -m mypy backend
 .\backend\.venv\Scripts\python.exe -m pytest backend/tests/test_generation_integration.py backend/tests/test_ws.py backend/tests/test_comfy_proxy.py backend/tests/test_prompt_metadata.py backend/tests/test_snapshot_service_req267.py backend/tests/test_snapshots_req316_metadata.py backend/tests/test_dataset_router.py -q
 Set-Location frontend

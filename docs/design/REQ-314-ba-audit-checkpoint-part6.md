@@ -30,7 +30,7 @@ const GROUP_PARAMS = {
 各groupの正確なキー集合、modelID重複なし、3役割label、詳細初期閉、同一PUTペイロード、unknown key非表示、refetch後dirty params不変を検証。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx
 ```
@@ -56,8 +56,8 @@ depends_on: [REQ-314-T3, REQ-314-T6]
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx`
 依存: REQ-314-T3, REQ-314-T6。所有 2 ファイル、実装＋局所テストの追加削除合計 280 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -119,7 +119,7 @@ interface LlmPrompt { id: number; key: string; content: string; description: str
 4providerの保存前即時可視、認証欄条件、FuguMT PUTキー1件、debounce境界、未保存draft/refetch/保存失敗/プレビュー無効状態を検証。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx
 ```
@@ -145,8 +145,8 @@ depends_on: [REQ-314-T14]
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx`
 依存: REQ-314-T14。所有 2 ファイル、実装＋局所テストの追加削除合計 210 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context
@@ -211,7 +211,7 @@ export function WorkflowConnectionSection({
 groupごとの見出し/controls、workflow-only modal、差分/復元/名前/複製APIペイロード、system側workflow不要fetchなし、長押しLS保存を検証。
 期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。設計段階では未実行。
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx
 ```
@@ -237,8 +237,8 @@ depends_on: []
 所有範囲以外を変更しない。他担当の変更を取り消さず、共有ファイルはDAG順に実行する。
 
 ## Target / Atomicity
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/TranslationPreviewCard.tsx`
-- `C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/TranslationPreviewCard.tsx`
+- `<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx`
 依存: なし。所有 2 ファイル、実装＋局所テストの追加削除合計 255 行以下（見積り）。Atomicity: PASS（設計時）。300変更行を超える場合は担当者が分割設計を差し戻し、超過して進めない。
 
 ## Hermetic Context

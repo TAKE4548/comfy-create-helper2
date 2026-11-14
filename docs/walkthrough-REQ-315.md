@@ -31,8 +31,8 @@
 
 ## QA 監査と GPU 解放
 
-- QA 監査: coordinator が結果を回収できなかった先行実行の後、単一の再試行 `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py qa-audit docs/design/REQ-315-test-plan.md` が exit 0 で **Pass with Conditions** を返した。監査は受入条件に明示的な欠陥なしと報告した。助言事項は、取得中表示の客観的な時間基準、競合応答テストの数値化された間隔、API 呼び出し回数の明示である。request ID / 状態機械は設計改善案として提示された。既存の対象テストは呼び出し回数、取消、競合、タイムアウト、失敗を検証している。これ以上の監査は実施していない。
-- GPU cleanup: `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload`
+- QA 監査: coordinator が結果を回収できなかった先行実行の後、単一の再試行 `python <GLOBAL_HELPERS>\local_model_adapter.py qa-audit docs/design/REQ-315-test-plan.md` が exit 0 で **Pass with Conditions** を返した。監査は受入条件に明示的な欠陥なしと報告した。助言事項は、取得中表示の客観的な時間基準、競合応答テストの数値化された間隔、API 呼び出し回数の明示である。request ID / 状態機械は設計改善案として提示された。既存の対象テストは呼び出し回数、取消、競合、タイムアウト、失敗を検証している。これ以上の監査は実施していない。
+- GPU cleanup: `python <GLOBAL_HELPERS>\local_model_adapter.py unload`
 - 結果: QA 再試行直後の unload は exit 0 で、全モデル解放と VRAM 解放を報告した。検証担当が先に実行した unload も exit 0 で、LM Studio にロード済みモデルがないと報告された。
 
 ## 判定根拠

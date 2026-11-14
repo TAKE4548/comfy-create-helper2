@@ -11,7 +11,7 @@
 ### 1.2 WindowsGpuMonitor 全エンジンMAX集計ユニット検証
 - **コマンド**:
   ```powershell
-  & "c:\Users\audih\ws\comfy-create-helper2\backend\.venv\Scripts\python.exe" -c "
+  & "<REPO_ROOT>\backend\.venv\Scripts\python.exe" -c "
   import sys; sys.path.insert(0, 'backend')
   from app.services.resource_monitor import WindowsGpuMonitor
   import time

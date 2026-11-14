@@ -5,7 +5,7 @@
 - 日付: 2026-10-04 (Asia/Tokyo)
 - 判定: **INCONCLUSIVE（推論未開始・レビュー結果なし）**
 - 対象: `REQ-314-ba-audit-input.md`。設計/test-plan/14カード全文、71,104文字。adapter自動分割7chunk。
-- command: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --unload-after --timeout 300 ba-audit docs/design/REQ-314-ba-audit-input.md`
+- command: `python <GLOBAL_HELPERS>/local_model_adapter.py --unload-after --timeout 300 ba-audit docs/design/REQ-314-ba-audit-input.md`
 - requested routing: ba-audit / reasoning。actual requested model: `local-model`（ログによる）。
 - model parameters/quant: ロードできず未取得。架空のtrace metadataを付けない。
 

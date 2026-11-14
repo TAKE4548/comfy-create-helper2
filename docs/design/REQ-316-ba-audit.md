@@ -12,7 +12,7 @@ related_paths:
 
 - 判定: **INCONCLUSIVE（中断後に完了結果を取得できない）**。PASS/条件付き承認とは扱わない。
 - 対象: PBI、設計書、テスト計画、implementation_plan.md、T1〜T8。入力スナップショットはREQ-316-audit-input.md。
-- 正式コマンド: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --unload-after ba-audit docs/design/REQ-316-audit-input.md`。
+- 正式コマンド: `python <GLOBAL_HELPERS>/local_model_adapter.py --unload-after ba-audit docs/design/REQ-316-audit-input.md`。
 - adapterは入力54,234文字を5分割。モデルqwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensoredをロードした。
 - 最後の観測: segment 1の処理後、segment 2/5へ進行。segment 2完了や最終判定は観測していない。
 - 継続時、exec session 15716は `Unknown process id 15716` で再接続不能。期待した監査結果ファイルも存在しなかった。成功/失敗/timeoutのどれで終了したかは断定できない。
@@ -21,7 +21,7 @@ related_paths:
 - 先行CLIヘルプ確認で誤実行された `ba-audit --help` はREQ-316の監査として数えない。無関係な2ファイルは削除、推論直後のunload成功を確認済み。
 
 ## 明示的なcleanup
-再開時に `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload` を実行。
+再開時に `python <GLOBAL_HELPERS>/local_model_adapter.py unload` を実行。
 - exit code: **0**。
 - stdout: `[Model Auto-Router] No models currently loaded in LM Studio.`
 - LM Studioにロード済みモデルがないことを確認。GPU総使用メモリ0や他プロセスのVRAM利用は計測していない。

@@ -74,6 +74,6 @@
 ---
 
 ## 4. ツール主導監査 (Tool-Driven Audit)
-- **コマンド**: `backend\.venv\Scripts\python C:\Users\audih\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-369-test-plan.md`
-- **アンロード**: `backend\.venv\Scripts\python C:\Users\audih\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py unload`
+- **コマンド**: `backend\.venv\Scripts\python <USER_HOME>\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-369-test-plan.md`
+- **アンロード**: `backend\.venv\Scripts\python <USER_HOME>\.agent-tooling\releases\f93fa85ae12d940a605d9b389d6b17d8511159f14123c61c020807b1243dc830\helpers\local_model_adapter.py unload`
 

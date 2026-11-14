@@ -78,7 +78,7 @@ thumbnail errorで直接historyを削除する現callbackを置換する。原�
 確定原画missingだけstoreのcomfyHistoryImages/batchImagesから削除。query cacheと選択の同期はT21のhookが担当、T28で実結線を確認。保存Snapshot branchにこのonError/probe/削除を適用しない。
 
 ## 変更カード所有/依存/命令
-BE cwd=C:/Users/audih/ws/comfy-create-helper2/backend、FE cwd=同frontend。FE test前にnpm run typecheck、BE mypyは各カードの対象。
+BE cwd=<REPO_ROOT>/backend、FE cwd=同frontend。FE test前にnpm run typecheck、BE mypyは各カードの対象。
 T2: 所有=backend/app/schemas/generation.py;backend/tests/test_generation_schema.py;依存=なし;.\.venv\Scripts\python.exe -m pytest tests/test_generation_schema.py -q ; .\.venv\Scripts\python.exe -m mypy app/schemas/generation.py
 T5: 所有=backend/app/services/generation_service.py;backend/tests/test_generation_service.py;依存=REQ-333-T2;.\.venv\Scripts\python.exe -m pytest tests/test_generation_service.py -q ; .\.venv\Scripts\python.exe -m mypy app/services/generation_service.py
 T6: 所有=backend/app/services/comfy_generation_bridge.py;backend/tests/test_comfy_generation_bridge.py;backend/requirements.txt;依存=REQ-333-T2;.\.venv\Scripts\python.exe -m pytest tests/test_comfy_generation_bridge.py -q ; .\.venv\Scripts\python.exe -m mypy app/services/comfy_generation_bridge.py

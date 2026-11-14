@@ -36,7 +36,7 @@ related_paths:
 
 ## 3. 実行エビデンス (execution_evidence)
 
-### Gate 1 静的検証（`C:\Users\audih\ws\comfy-create-helper2`）
+### Gate 1 静的検証（`<REPO_ROOT>`）
 
 | コマンド | 結果 |
 |---|---|

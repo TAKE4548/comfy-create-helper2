@@ -7,7 +7,7 @@
 ## 実行環境
 
 - 日時: 2026-10-13 JST
-- 対象: `C:/Users/audih/ws/comfy-create-helper2/frontend`
+- 対象: `<REPO_ROOT>/frontend`
 - ブラウザ在庫: Codex In-app Browser は存在するがタブなし。アプリ一覧も空。対象アプリのURL・版・viewportは取得できず、ブラウザ検証を開始できなかった。
 - 作業ツリー: `git status --short` は `fatal: this operation must be run in a work tree` で失敗。差分ベースラインを確認できない。
 
@@ -42,7 +42,7 @@ Duration   67.27s
 補助ゲート:
 
 ```text
-command: python C:/Users/audih/.gemini/antigravity/scripts/workflow_validator.py test-hygiene REQ-357
+command: python <GLOBAL_HELPERS>/workflow_validator.py test-hygiene REQ-357
 exit: 1
 result: TEST_ACCRETION_VIOLATION を含む既存ticket-named test filesを複数検出
 ```
@@ -62,7 +62,7 @@ Gate 2総合: **FAIL（必須hygiene条件未達）**。Vitest全件は成功し
 ### Local Model QA Audit / Cleanup
 
 ```text
-command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-357-test-plan.md docs/design/REQ-357-walkthrough.md
+command: python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-357-test-plan.md docs/design/REQ-357-walkthrough.md
 exit: 0
 model: qwen/qwen3.5-9b (9.0B, Q6_K; adapter domain fixed-audit-model)
 target: REQ-357-test-plan, REQ-357-walkthrough
@@ -83,7 +83,7 @@ audit verdict: FAIL (Critical Ambiguities Detected), risk HIGH
 上表は監査traceの要約であり、監査提案を承認したりtest planへ自動採用したりしたものではない。
 
 ```text
-command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+command: python <GLOBAL_HELPERS>/local_model_adapter.py unload
 exit: 0
 output: LM Studio reports no models loaded.
 ```

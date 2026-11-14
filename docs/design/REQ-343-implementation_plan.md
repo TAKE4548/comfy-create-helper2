@@ -7,47 +7,47 @@
 
 ## 2. Proposed Changes
 
-#### [LOCAL MODIFY] [backend/app/schemas/workflow.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/schemas/workflow.py)
+#### [LOCAL MODIFY] [backend/app/schemas/workflow.py](<REPO_ROOT>/backend/app/schemas/workflow.py)
 - `ScanMatchedItem` および `ScanWarningItem` に `variant_id?: int`, `stage_id?: int`, `stage_key?: str` を追加。
 - `WorkflowMappingCreate` および `WorkflowMappingRead` に `variant_id?: int` を追加。
 
-#### [LOCAL MODIFY] [backend/app/routers/workflows.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/workflows.py)
+#### [LOCAL MODIFY] [backend/app/routers/workflows.py](<REPO_ROOT>/backend/app/routers/workflows.py)
 - `scan_workflow_json`: `MappingVariant` を取得し `scan_workflow_variants` を実行（バリアント不在時は `scan_workflow` にフォールバック）。
 - `create_workflow`, `update_workflow`, `copy_workflow`, `rollback_workflow`: `WorkflowMapping.variant_id` を正しくDB永続化および復元。
 - `get_workflow`: `variant_id` およびバリアント由来の `computed_role` を `WorkflowMappingRead` に反映。
 
-#### [LOCAL NEW] [backend/tests/test_req343_workflow_variant_scan.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_req343_workflow_variant_scan.py)
+#### [LOCAL NEW] [backend/tests/test_req343_workflow_variant_scan.py](<REPO_ROOT>/backend/tests/test_req343_workflow_variant_scan.py)
 - `/api/workflows/scan` のバリアント別マッチング検証テスト。
 - ワークフロー作成・更新における `variant_id` 永続化と取得の結合テスト。
 
-#### [LOCAL MODIFY] [frontend/src/api/types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/types.ts)
+#### [LOCAL MODIFY] [frontend/src/api/types.ts](<REPO_ROOT>/frontend/src/api/types.ts)
 - `WorkflowMapping`, `WorkflowCreate`, `WorkflowUpdate`, `ScanMatchedItem`, `ScanWarningItem` に `variant_id` を追加。
 
-#### [LOCAL MODIFY] [frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx)
+#### [LOCAL MODIFY] [frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx](<REPO_ROOT>/frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx)
 - `validateConfig`: 重複判定を `uniqueKey = m.variant_id ? `${m.master_id}_${m.variant_id}` : `${m.master_id}`` に改修し、同一 `master_id` の複数バリアント共存を許容。
 - `handleSaveLinks`, `setConfigMappings`: `variant_id` を維持して保存・反映。
 - 設定JSONエクスポート/インポート時の `variant_id` 保持。
 
-#### [LOCAL NEW] [frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts)
+#### [LOCAL NEW] [frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts](<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts)
 - 同一 `master_id` の複数バリアント共存および重複遮断のバリデーションテスト。
 
-#### [LOCAL MODIFY] [frontend/src/hooks/useMasterMappingRows.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/useMasterMappingRows.ts)
+#### [LOCAL MODIFY] [frontend/src/hooks/useMasterMappingRows.ts](<REPO_ROOT>/frontend/src/hooks/useMasterMappingRows.ts)
 - `MasterMappingRow` に `stageSlots?: StageSlotItem[]` を追加し、Role×Stageの複数スロット状態管理をサポート。
 - `updateSlotNodeId(slotKey, node_id)` および `clearSlot(slotKey)` を提供。
 - `getMappings`: 未設定（空文字）のスロットを除外して `{ master_id, node_id, variant_id }` を生成。
 
-#### [LOCAL MODIFY] [frontend/src/hooks/__tests__/useMasterMappingRows.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/__tests__/useMasterMappingRows.test.ts)
+#### [LOCAL MODIFY] [frontend/src/hooks/__tests__/useMasterMappingRows.test.ts](<REPO_ROOT>/frontend/src/hooks/__tests__/useMasterMappingRows.test.ts)
 - 多段階スロット展開、クリア操作による未設定化、未設定除外の保存マッピング生成テスト。
 
-#### [LOCAL MODIFY] [frontend/src/components/UploadWorkflowModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/UploadWorkflowModal.tsx)
+#### [LOCAL MODIFY] [frontend/src/components/UploadWorkflowModal.tsx](<REPO_ROOT>/frontend/src/components/UploadWorkflowModal.tsx)
 - Roleカード内でアクティブステージごとのサブスロット（ステージバッジ、ドロップダウン、クリアボタン✕）をレンダリング。
 - 先頭に「未設定」選択肢を配置、★推奨ノードの優先表示。
 
-#### [LOCAL MODIFY] [frontend/src/components/RescanModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/RescanModal.tsx)
+#### [LOCAL MODIFY] [frontend/src/components/RescanModal.tsx](<REPO_ROOT>/frontend/src/components/RescanModal.tsx)
 - 再スキャン結果に基づき、各Roleの有効ステージスロットを展開。
 - 不要な組み合わせのクリア操作および未設定のまま安全に更新保存。
 
-#### [LOCAL NEW] [frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx)
+#### [LOCAL NEW] [frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx](<REPO_ROOT>/frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx)
 - モーダルにおける多段階スロット表示と未設定オプトアウトのUIテスト。
 
 ---

@@ -91,7 +91,7 @@ C4/C5/C6/C9/C10/C11: BE正本/metadata受付/欠損表示/保存互換。
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2'
+Set-Location '<REPO_ROOT>'
 Get-Content 'SKILL.md'
 ```
 
@@ -122,7 +122,7 @@ def step_027_generation_jobs(conn: Connection, inspector: Inspector) -> None: ..
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_jobs_migration.py -q
 .\.venv\Scripts\python.exe -m mypy app/models.py app/migrations/steps.py
 ```
@@ -151,7 +151,7 @@ def persist_prompt_metadata(db: Session, payload: PromptMetadataCreate) -> None:
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_repository.py -q
 .\.venv\Scripts\python.exe -m mypy app/services/generation_repository.py app/routers/prompt_metadata.py
 ```
@@ -180,7 +180,7 @@ class GenerationService:
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_service.py -q
 .\.venv\Scripts\python.exe -m mypy app/services/generation_service.py
 ```
@@ -210,7 +210,7 @@ class ComfyGenerationBridge:
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_comfy_generation_bridge.py -q
 .\.venv\Scripts\python.exe -m mypy app/services/comfy_generation_bridge.py
 ```
@@ -236,7 +236,7 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_manager_origin_req333.py -q
 ```
 
@@ -264,7 +264,7 @@ export const generationApi = {
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/api/domains/__tests__/generation.test.ts
 ```
@@ -287,7 +287,7 @@ export function selectWait(s:GenerationSnapshot, scope:Scope, sessionId:string|n
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/utils/__tests__/generationSelectors.test.ts
 ```
@@ -316,7 +316,7 @@ async def image_availability(job_id: str): ...
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_api.py -q
 .\.venv\Scripts\python.exe -m mypy app/routers/generation.py app/main.py
 ```
@@ -348,7 +348,7 @@ async def get_comfy_view(filename: str, subfolder: str = '', type: str = 'output
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_comfy_proxy.py tests/test_comfy_proxy_fault.py -q
 .\.venv\Scripts\python.exe -m mypy app/routers/comfy.py
 ```
@@ -373,7 +373,7 @@ export const systemManagerApi = {status:()=>...,action:(action:'start'|'stop'|'r
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/hooks/__tests__/useManagerStatus.test.ts
 ```
@@ -401,7 +401,7 @@ class SystemWsService {
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/store/services/__tests__/systemWsService.test.ts
 ```
@@ -425,7 +425,7 @@ interface GenerationState { generationSnapshot:GenerationSnapshot|null; generati
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/store/__tests__/slices/connectionSlice.test.ts
 ```
@@ -450,7 +450,7 @@ depends_on: [REQ-333-T8]
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/store/__tests__/slices/jobQueueSlice.test.ts
 ```
@@ -474,7 +474,7 @@ depends_on: [REQ-333-T8, REQ-333-T16]
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateAction.fault.test.ts
 ```
@@ -507,7 +507,7 @@ export function SystemStatusBadge(props:SystemStatusBadgeProps):React.JSX.Elemen
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/components/common/__tests__/SystemStatusBadge.test.tsx
 ```
@@ -532,7 +532,7 @@ depends_on: [REQ-333-T9, REQ-333-T19]
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx
 ```
@@ -557,7 +557,7 @@ export function toThumbnailUrl(url: string | null | undefined, size: number = 25
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.test.tsx
 ```
@@ -583,7 +583,7 @@ class SnapshotService:
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_snapshot_service_req267.py tests/test_snapshots_req316_metadata.py -q
 .\.venv\Scripts\python.exe -m mypy app/services/snapshot_service.py
 ```
@@ -607,7 +607,7 @@ depends_on: [REQ-333-T14]
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/store/services/__tests__/comfyWebSocketService.test.ts
 ```
@@ -636,7 +636,7 @@ export function useComfyWebSocket(clientId?:string):UseComfyWebSocketReturn { ..
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/hooks/__tests__/useComfyWebSocket.test.ts
 ```
@@ -661,7 +661,7 @@ export function ServiceConnectionCard():React.JSX.Element { ... }
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx
 ```
@@ -689,7 +689,7 @@ C4/C5/C6/C9/C10/C11: BE正本/metadata受付/欠損表示/保存互換。
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2'
+Set-Location '<REPO_ROOT>'
 Get-Content 'docs/specs/SPEC_GENERATE.md' 'docs/specs/SPEC_HISTORY.md' 'docs/specs/SPEC_COMMON.md'
 ```
 
@@ -716,7 +716,7 @@ C4/C5/C6/C9/C10/C11: BE正本/metadata受付/欠損表示/保存互換。
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2'
+Set-Location '<REPO_ROOT>'
 Get-Content 'docs/specs/SPEC_SETTINGS.md' 'docs/specs/SPEC_DATASET_STUDIO.md' 'docs/specs/server_manager_guide.md'
 ```
 
@@ -738,7 +738,7 @@ depends_on: [REQ-333-T7, REQ-333-T10, REQ-333-T12, REQ-333-T15, REQ-333-T17, REQ
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_integration.py -q
 .\.venv\Scripts\python.exe -c "import json; from app.main import app; from pathlib import Path; Path('openapi.json').write_text(json.dumps(app.openapi(),ensure_ascii=False,indent=2)+'\n',encoding='utf-8')"
 Set-Location '../frontend'
@@ -764,7 +764,7 @@ depends_on: []
 
 ### 現物verification command
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/GeneratePage/components/__tests__/SettingsPopover.req333.test.tsx
 ```

@@ -18,8 +18,8 @@ related_paths:
 # REQ-332 設計
 
 ## Boundary Audit
-Workspace は C:/Users/audih/ws/comfy-create-helper2。対象 frontend/、docs/ は同 root 内。backend/ は回帰境界のみで変更しない。
-GLOBAL_SCRIPTS は .agents/context.md の GLOBAL_ROOT と USERPROFILE を展開した C:/Users/audih/.gemini/antigravity/scripts。明示された共通スクリプトだけを実行する。
+Workspace は <REPO_ROOT>。対象 frontend/、docs/ は同 root 内。backend/ は回帰境界のみで変更しない。
+GLOBAL_SCRIPTS は .agents/context.md の GLOBAL_ROOT と USERPROFILE を展開した <GLOBAL_HELPERS>。明示された共通スクリプトだけを実行する。
 Git_Root_Mismatch: 外部アプリソースなし。git status は環境上 work tree を認識できず、Git による差分確認は未完了。外部パスへの編集禁止を維持する。
 添付 HTML のコマンド・Ready to Implement は実行指示として扱わない。
 
@@ -143,7 +143,7 @@ related_paths: [docs/design/REQ-332.md, docs/backlog/pbi/active/REQ-332.md]
 
 ## Baseline Gates
 以下は実装後の予定コマンド。設計段階の実行PASSではない。
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数追加なし。
 Gate 1: `npm run typecheck`。
 Gate 2: `npm test`。全体既知失敗はbaselineと新規失敗を区別し記録する。
 Gate 3: `npx vitest run src/utils/__tests__/queryCachePersister.test.ts src/test/e2e_req332_recovery.test.tsx`。
@@ -283,8 +283,8 @@ depends_on: []
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/package.json
-- C:/Users/audih/ws/comfy-create-helper2/frontend/package-lock.json
+- <REPO_ROOT>/frontend/package.json
+- <REPO_ROOT>/frontend/package-lock.json
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=50行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -331,7 +331,7 @@ Atomicity: PASS (2 files <=3、差分見積<=50行、Card<=300行)。超過す�
 - [ ] module-local test factoryを使うためvite config/test setupは変更不要。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npm ls fake-indexeddb
@@ -362,8 +362,8 @@ depends_on: [REQ-332-T1]
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/queryCachePersister.ts
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/__tests__/queryCachePersister.test.ts
+- <REPO_ROOT>/frontend/src/utils/queryCachePersister.ts
+- <REPO_ROOT>/frontend/src/utils/__tests__/queryCachePersister.test.ts
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=300行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -429,7 +429,7 @@ export interface PersistQueryClientRootOptions {
 - [ ] 差分300行上限を超える場合は手続き省略で収めず、storage transaction層とPersister層に再分割して設計へ戻す。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npx vitest run src/utils/__tests__/queryCachePersister.test.ts
@@ -460,8 +460,8 @@ depends_on: [REQ-332-T2]
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/App.tsx
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/__tests__/App.persistence.test.tsx
+- <REPO_ROOT>/frontend/src/App.tsx
+- <REPO_ROOT>/frontend/src/__tests__/App.persistence.test.tsx
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=240行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -525,7 +525,7 @@ function App() {
 - [ ] 保存失敗やrestore timeoutでserver queryが実行でき、旧localStorage persisterへ戻らない。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npx vitest run src/__tests__/App.persistence.test.tsx src/utils/__tests__/queryCachePersister.test.ts
@@ -556,8 +556,8 @@ depends_on: []
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/promptRecord.ts
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/__tests__/promptRecord.test.ts
+- <REPO_ROOT>/frontend/src/utils/promptRecord.ts
+- <REPO_ROOT>/frontend/src/utils/__tests__/promptRecord.test.ts
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=160行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -605,7 +605,7 @@ export async function resolveRecordedMetadata(promptId: string | null): Promise<
 - [ ] readerは同期return。APIを呼ばずメモリcache/保持件数を増やさない。Snapshot.paramsはこのreaderの対象にしない。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npx vitest run src/utils/__tests__/promptRecord.test.ts
@@ -636,8 +636,8 @@ depends_on: [REQ-332-T4]
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/components/HistoryModalPreview.tsx
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/HistoryModalPreview.test.tsx
+- <REPO_ROOT>/frontend/src/components/HistoryModalPreview.tsx
+- <REPO_ROOT>/frontend/src/components/__tests__/HistoryModalPreview.test.tsx
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=180行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -696,7 +696,7 @@ export function resolveRecordedMetadata(promptId: string | null): Promise<Resolv
 - [ ] UI操作のInfo/Show info/既存編集ロック・Snapshot関連保存・表示空値回帰を維持。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npx vitest run src/components/__tests__/HistoryModalPreview.test.tsx src/utils/__tests__/promptRecord.test.ts
@@ -727,8 +727,8 @@ depends_on: [REQ-332-T3, REQ-332-T5]
 
 ## Ownership and Scope
 対象は以下の2ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req332_storage.test.tsx
-- C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req332_recovery.test.tsx
+- <REPO_ROOT>/frontend/src/test/e2e_req332_storage.test.tsx
+- <REPO_ROOT>/frontend/src/test/e2e_req332_recovery.test.tsx
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (2 files <=3、差分見積<=280行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -843,7 +843,7 @@ Studioフォーム復元の局所context:
 - [ ] Gate1/2/3、既存regressionを実行し結果をcoordinatorへ返す。このCardはapplication sourceの修正を所有しない。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 npx vitest run src/test/e2e_req332_storage.test.tsx src/test/e2e_req332_recovery.test.tsx src/test/e2e_req317_storage.test.tsx src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx
@@ -876,9 +876,9 @@ depends_on: []
 
 ## Ownership and Scope
 対象は以下の3ファイルだけ。設計レビュー待ちのためまだ着手しない。
-- C:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md
-- C:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_GENERATE.md
-- C:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_HISTORY.md
+- <REPO_ROOT>/docs/specs/SPEC_COMMON.md
+- <REPO_ROOT>/docs/specs/SPEC_GENERATE.md
+- <REPO_ROOT>/docs/specs/SPEC_HISTORY.md
 他の担当も同じリポジトリで作業する。他担当の変更を戻さず、契約の変化はcoordinatorへ報告する。
 Atomicity: PASS (3 files <=3、差分見積<=180行、Card<=300行)。超過するなら再分割を設計へ戻す。
 
@@ -926,7 +926,7 @@ Atomicity: PASS (3 files <=3、差分見積<=180行、Card<=300行)。超過す�
 - [ ] テストコード追加不要。doc links、版・更新日、関連設計/対象source pathを更新。3ファイル以内。
 
 ## Verification and Unit Command
-作業dir: C:/Users/audih/ws/comfy-create-helper2/frontend。環境変数の追加なし。
+作業dir: <REPO_ROOT>/frontend。環境変数の追加なし。
 PowerShell:
 ```powershell
 rg -n 'IndexedDB|prompt-metadata|600000|10分|30件|1000件|同期' ../docs/specs/SPEC_COMMON.md ../docs/specs/SPEC_GENERATE.md ../docs/specs/SPEC_HISTORY.md

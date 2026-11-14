@@ -109,7 +109,7 @@ mobile表は同一DOM/DNDを維持し、読み上げ意味の実機確認はユ�
 D1/D2は人間が推奨範囲へ確定済み。決定原文を残してACを改訂し、未検証のACをPASSにしない。
 
 ## Human Design Review Gate
-[dev-design](C:/Users/audih/.gemini/config/skills/dev-design/SKILL.md) Step 2:
+[dev-design](<USER_HOME>/.gemini/config/skills/dev-design/SKILL.md) Step 2:
 「Physically generate all Task Cards ... BEFORE requesting implementation_plan.md approval.」
 および今回のarchitect指示「Return changed designs through the human design review gate」により、
 D1/D2と元の最終設計レビューはユーザー「OK」で承認済み。T3/T15/T16は同じ承認範囲を300行以下へ分割する改訂で、親coordinatorが再レビュー不要と指示済み。

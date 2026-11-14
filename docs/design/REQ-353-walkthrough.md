@@ -50,16 +50,16 @@ Sandbox内のbackend pytestはTestClientの最初のcaseで進捗が止まった
 - `npx vitest run src/utils/__tests__/seedInputResolver.test.ts src/utils/__tests__/seedBatch.test.ts src/utils/__tests__/workflowParamInjector.test.ts src/utils/__tests__/generationRecord.test.ts` — 4 files、53 passed。
 - `npx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` — 2 files、65 passed。
 - `cd backend; $env:PYTHONPATH='.'; ./.venv/Scripts/python.exe -m pytest tests/test_req353_seed_mapping_api.py tests/test_req353_openapi_contract.py tests/test_req350_seed_mapping_api.py tests/test_req336_mapping_masters_api.py`（elevated）— 11 passed。
-- `python C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py backend/openapi.json get-schema WorkflowMappingRead` — `fallback_param_names`はarray<string>|nullのoptional propertyでrequired外。
+- `python <GLOBAL_HELPERS>/openapi_parser.py backend/openapi.json get-schema WorkflowMappingRead` — `fallback_param_names`はarray<string>|nullのoptional propertyでrequired外。
 
 実ComfyUI POSTやGPU画像生成は行っていない。test planの規定どおりfixture/stub境界でpayloadを検証した。
 
 ### Local QA auditとcleanup
 
-- 実行: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-353-test-plan.md`（elevated）。
+- 実行: `python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-353-test-plan.md`（elevated）。
 - 結果: **FAIL (Critical Ambiguities Detected)**。モデル`qwen/qwen3.5-9b`、9.0B、Q6_K。監査文書は、テスト手順の環境前提、toast/record確認方法、Red Team入力と期待値、baseline比較などの明記不足を指摘した。
 - AC影響: この監査結果はAC-1〜5の失敗証拠を示していない。実行した対象テストは全ACを検証した。ただし監査所見を無視して監査PASS扱いにはしない。
-- 即時cleanup: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload`（elevated）exit 0。`LM Studio reports no models loaded`を確認。全GPUメモリ解放を意味しない。
+- 即時cleanup: `python <GLOBAL_HELPERS>/local_model_adapter.py unload`（elevated）exit 0。`LM Studio reports no models loaded`を確認。全GPUメモリ解放を意味しない。
 
 </execution_evidence>
 

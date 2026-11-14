@@ -21,7 +21,7 @@ REQ-386「生成中ステップ進捗（個別プログレスバー）の停止�
   - コマンド: `backend\.venv\Scripts\python.exe scripts/verify_ui_invariants.py`
   - 結果: Exit Code 0, `SUCCESS: UI invariant check passed (0 violations across 537 files).`
 - **テスト衛生検査 (`workflow_validator.py test-hygiene`)**:
-  - コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-386`
+  - コマンド: `python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-386`
   - 結果: Exit Code 0, `[PASS] No ticket-named test files found. Validation successful.`
 
 ### Gate 2: フルテストスイート Baseline (PASS)
@@ -62,12 +62,12 @@ REQ-386「生成中ステップ進捗（個別プログレスバー）の停止�
     1. `[REQ-386/AC-2] preserves pendingAutoFollowUrl until image is confirmed in sortedDisplayImages`
 
 ### API契約検証 (`openapi_parser.py`)
-- コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\openapi_parser.py backend/openapi.json get-endpoint /api/generation/state get`
+- コマンド: `python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\openapi_parser.py backend/openapi.json get-endpoint /api/generation/state get`
 - 結果: Exit Code 0
 - 検証確認: `JobView` の `node`（`NodeView`: `id`, `name`, `value`, `max`）および `preview_url`（`string | null`）のスキーマ整合を確認。
 
 ### GPU VRAM クリーンアップ検証
-- コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
+- コマンド: `python <USER_HOME>\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
 - 結果: Exit Code 0 (`[Model Auto-Router] No models currently loaded in LM Studio.`)
 
 </execution_evidence>

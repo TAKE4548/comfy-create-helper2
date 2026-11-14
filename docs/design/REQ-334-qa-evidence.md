@@ -35,7 +35,7 @@ R15はsandboxでの試行がWindows socket `EPERM` で起動できず、同一�
 
 ## 独立ローカルQA監査
 
-指定コマンド `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py qa-audit docs/design/REQ-334-test-plan.md` を実行。全文出力は `.tmp/req334-qa/local-qa-audit-final.log`。ComfyUI active job判定のため151秒待機後、`qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored` (9.0B, Q6_K)をロードして監査が完了、exit 0。traceはログに記録されている。
+指定コマンド `python <GLOBAL_HELPERS>/local_model_adapter.py qa-audit docs/design/REQ-334-test-plan.md` を実行。全文出力は `.tmp/req334-qa/local-qa-audit-final.log`。ComfyUI active job判定のため151秒待機後、`qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored` (9.0B, Q6_K)をロードして監査が完了、exit 0。traceはログに記録されている。
 
 監査の実際の判定は **条件付き合格 (Conditional Pass)**。指摘はテスト計画の明確化提案で、抽象的な期待値をJSON差分/API件数などの数値にする、証拠画像のファイル名/hash、console出力、Tab focus順、Browser timeoutを明示するという内容。現時点の実行/AC evidenceの不合格指摘ではないが、無条件の `COMPLIANT` ではない。独立監査の指摘を記録し、PASSと読み替えない。全文と構造化要約は [REQ-334-audit.md](REQ-334-audit.md) に記録。
 

@@ -39,7 +39,7 @@ related_paths:
 | `tools/server-manager/server_status.py` | LISTEN/STOPPED/BUNDLED、pidsは空。runningはTCPポート状態 | 起動操作中状態を別に持ち、TCP状態とHTTP応答を区別 |
 | `backend/app/services/snapshot_service.py` | HTTP(S)絶対URLをdownload。`/view`を含むpathを上流へ再構成 | `/api/comfy/view`と旧URLを正しく上流`/view`へ変換 |
 
-境界はすべて`C:/Users/audih/ws/comfy-create-helper2`内。Git_Root_Mismatch: No（外部実装パスなし）。作業はdocsの設計・カードのみ。global scriptはcontextから`C:/Users/audih/.gemini/antigravity/scripts`に解決した。doc_mapperはPBI・FE・jobQueueSliceにmappedなしを返したため、PBIで列挙済みの仕様書とそこから得た実装パスを限定読取りした。
+境界はすべて`<REPO_ROOT>`内。Git_Root_Mismatch: No（外部実装パスなし）。作業はdocsの設計・カードのみ。global scriptはcontextから`<GLOBAL_HELPERS>`に解決した。doc_mapperはPBI・FE・jobQueueSliceにmappedなしを返したため、PBIで列挙済みの仕様書とそこから得た実装パスを限定読取りした。
 
 `docs/system/openapi.yaml`と`docs/openapi.yaml`は存在しない。実在する`backend/openapi.json`をopenapi_parserで確認したが、Dataset等現行routerを含まず古い可能性がある。API正本の更新は起動時生成契約を保ち、実装後の`app.openapi()`でこの実在ファイルを更新する案とする。WSとManagerはOpenAPI対象外のため本設計で別途契約を記す。
 
@@ -298,7 +298,7 @@ async def get_queue():
 Studio project欠落422、未知scope不許可。false/0/空paramsを保持。schema dump→load同一。
 
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_generation_schema.py -q
 .\.venv\Scripts\python.exe -m mypy app/schemas/generation.py
 ```
@@ -424,7 +424,7 @@ class ConnectionManager:
 snapshot/event race、duplicate/slow reader、SYSTEM_STATS混在、timeout切断、禁止Origin、全clients0でもpublisher正常。
 
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'
+Set-Location '<REPO_ROOT>/backend'
 .\.venv\Scripts\python.exe -m pytest tests/test_ws.py tests/test_generation_ws.py -q
 .\.venv\Scripts\python.exe -m mypy app/routers/ws.py
 ```
@@ -545,7 +545,7 @@ export function useStudioGeneration(projectId:number|null):{batches:GenerationSn
 A12/20 B2/10、A13/20失敗、normal残2待機、同project別batch、draft競合/750ms回帰。
 
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx
 ```

@@ -12,11 +12,11 @@ related_paths: [docs/design/REQ-350.md, docs/design/REQ-350-test-plan.md, implem
 
 - 実施日: 2026-10-12（ユーザーのAsia/Tokyo日付）。
 - 対象: REQ-350の設計書、test plan、implementation_plan、生成済みTask Card。モデル本文はT3/T5/T7を明示引用している。
-- 指定command: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py ba-audit`。成功回は追加引数なし。サンドボックスのlocalhost制限を解消するためrequire_escalatedを使用。
+- 指定command: `python <GLOBAL_HELPERS>/local_model_adapter.py ba-audit`。成功回は追加引数なし。サンドボックスのlocalhost制限を解消するためrequire_escalatedを使用。
 - reasoning model: qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored、9.0B、Q6_K。audit exit=0、本文あり。model verdictは論理矛盾等を指摘したFAIL相当。
 - audit trace: Action=ba-audit / Domain=reasoning。初回の `ba-audit --help` はヘルプを出さず実行を開始したため、以後使用していない。
 - 通常権限の初回/指定command試行はLM Studio daemon timeoutとWinError10013で失敗し、有効な監査ではなかった。script exit=0だけで成功扱いしなかった。各回直後unload exit=0 / No models currently loaded。
-- 成功回の推論終了直後: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload`、exit=0。All models unloaded from LM Studio. VRAM freed.
+- 成功回の推論終了直後: `python <GLOBAL_HELPERS>/local_model_adapter.py unload`、exit=0。All models unloaded from LM Studio. VRAM freed.
 - cleanup確認: `lms ps` = No models are currently loaded。監査モデルの未ロードを確認した。
 - GPU全量実測: `nvidia-smi` は通常/昇格環境とも見つからず、GPU全体のmemory.used/free実測はできなかった。「GPU使用量0」「VRAMが100%空」を実測したとは扱わない。監査モデルの解放はadapterとlms psで確認できた。
 - 指摘への対応を以下に記録。補足修正後の再監査は未実施。アプリ実装/実装テストも未実施。

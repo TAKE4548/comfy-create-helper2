@@ -3,10 +3,10 @@
 ## 実行記録
 
 - 対象: `docs/design/REQ-332-test-plan.md`
-- 実行コマンド: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py qa-audit docs/design/REQ-332-test-plan.md`
+- 実行コマンド: `python <GLOBAL_HELPERS>/local_model_adapter.py qa-audit docs/design/REQ-332-test-plan.md`
 - 初回 sandbox 実行: adapterが`local-model` / Domain `general`へroute後、LM Studio daemon起動timeoutおよびWinError 10013で監査回答を取得できず。直後のunloadはexit 0、「No models currently loaded」。
 - 再試行: local network権限付き実行。adapter traceに Model `qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored`、Domain `reasoning`、Params `9.0B`、Quant `Q6_K`。監査回答取得、exit 0。
-- 再試行直後の解放: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload` exit 0。`All models unloaded from LM Studio. VRAM freed.` GPU全体の使用量は別計測していない。
+- 再試行直後の解放: `python <GLOBAL_HELPERS>/local_model_adapter.py unload` exit 0。`All models unloaded from LM Studio. VRAM freed.` GPU全体の使用量は別計測していない。
 
 ## 実際の監査回答
 
