@@ -226,7 +226,7 @@
         "docs/openapi.yaml"
       ],
       "line_budget": 200,
-      "verification_command": "git diff --check -- docs/openapi.yaml\npython C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/openapi.yaml get-endpoint /api/generation/history/residual post",
+      "verification_command": "git diff --check -- docs/openapi.yaml\npython <GLOBAL_HELPERS>/openapi_parser.py docs/openapi.yaml get-endpoint /api/generation/history/residual post",
       "status": "draft",
       "design_gate": "pending",
       "atomicity_check": "PASS_PLANNED",

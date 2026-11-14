@@ -23,7 +23,7 @@
 
 **PASS - Executable Commands:**
 ```powershell
-Set-Location 'C:\Users\audih\ws\comfy-create-helper2'
+Set-Location '<REPO_ROOT>'
 .\backend\.venv\Scripts\python.exe -m mypy backend
 .\backend\.venv\Scripts\python.exe -m pytest ... -q
 npm run typecheck
@@ -31,7 +31,7 @@ npx vitest run ...
 ```
 
 **ISSUES:**
-- Path `C:\Users\audih\ws\...` is environment-specific → **NOT reproducible across auditors**
+- Path `<USER_HOME>\ws\...` is environment-specific → **NOT reproducible across auditors**
 - Missing error threshold definitions (e.g., "what constitutes a failed test?")
 - No timeout specifications for long-running integration tests
 

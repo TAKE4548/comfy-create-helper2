@@ -8,7 +8,7 @@
     "target_diff_insertions": 20,
     "target_diff_deletions": 16,
     "test_declarations": 13,
-    "cwd": "C:/Users/audih/ws/comfy-create-helper2/frontend",
+    "cwd": "<REPO_ROOT>/frontend",
     "node": "v18.16.1",
     "npm": "9.7.1"
   },

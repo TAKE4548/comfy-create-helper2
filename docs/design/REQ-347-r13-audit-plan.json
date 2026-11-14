@@ -35,7 +35,7 @@
     }
   ],
   "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
-  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/backlog/task/active/REQ-347-T19.md implementation_plan.md",
+  "command": "python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/backlog/task/active/REQ-347-T19.md implementation_plan.md",
   "environment": {
     "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
     "LOCAL_AUDIT_REASONING_EFFORT": "none",

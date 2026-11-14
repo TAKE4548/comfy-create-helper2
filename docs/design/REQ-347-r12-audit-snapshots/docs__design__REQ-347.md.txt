@@ -18,7 +18,7 @@ related_paths:
 
 実現可能。対象は生成ページの水平の仕切りで分かれたプロンプト・パラメータ入力、および Settings → ワークフロー →「対応付け・設定」のノード対応編集の3領域。既存の `desktop-prompt-scroll` / `desktop-controls-scroll` は独立したscroll root。内部の `ResizableSplitLayout direction="vertical"` は上下配置と水平の仕切りを表す。入力とプレビューの左右分割とは区別する。
 
-Workspace / Git root は `C:/Users/audih/ws/comfy-create-helper2`。frontend・docsともこのroot配下、外部実装パスなし（Git_Root_Mismatch=No）。backend実装は変更なし。T13は既存API契約のOpenAPI snapshotのみ同期する。規定scriptはcontextから `GLOBAL_SCRIPTS=C:/Users/audih/.gemini/antigravity/scripts` に解決。
+Workspace / Git root は `<REPO_ROOT>`。frontend・docsともこのroot配下、外部実装パスなし（Git_Root_Mismatch=No）。backend実装は変更なし。T13は既存API契約のOpenAPI snapshotのみ同期する。規定scriptはcontextから `GLOBAL_SCRIPTS=<GLOBAL_HELPERS>` に解決。
 
 ## Evidence and SSoT Impact
 

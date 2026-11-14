@@ -2,7 +2,7 @@
   "pbi_id": "REQ-354",
   "action": "qa-audit",
   "target": "docs/design/REQ-354-test-plan.md",
-  "command": "python C:\\Users\\audih\\.gemini\\antigravity\\scripts\\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-354-test-plan.md",
+  "command": "python <GLOBAL_HELPERS>\\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-354-test-plan.md",
   "exit_code": 0,
   "model_id": "qwen/qwen3.5-9b",
   "model_id_source": "LOCAL_AUDIT_MODEL_KEY (adapter resolved configured model; same exact model is recorded by prior project audits)",
@@ -42,7 +42,7 @@
     }
   ],
   "model_unload": {
-    "command": "python C:\\Users\\audih\\.gemini\\antigravity\\scripts\\local_model_adapter.py unload",
+    "command": "python <GLOBAL_HELPERS>\\local_model_adapter.py unload",
     "exit_code": 0,
     "result": "LM Studio reports no models loaded"
   },

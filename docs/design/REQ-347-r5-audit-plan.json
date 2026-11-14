@@ -131,14 +131,14 @@
     }
   ],
   "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
-  "audit_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T1.md docs/backlog/task/active/REQ-347-T2.md docs/backlog/task/active/REQ-347-T3.md docs/backlog/task/active/REQ-347-T4.md docs/backlog/task/active/REQ-347-T5.md docs/backlog/task/active/REQ-347-T6.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T8.md docs/backlog/task/active/REQ-347-T9.md docs/backlog/task/active/REQ-347-T10.md docs/backlog/task/active/REQ-347-T11.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T13.md docs/backlog/task/active/REQ-347-T14.md implementation_plan.md",
+  "audit_command": "python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T1.md docs/backlog/task/active/REQ-347-T2.md docs/backlog/task/active/REQ-347-T3.md docs/backlog/task/active/REQ-347-T4.md docs/backlog/task/active/REQ-347-T5.md docs/backlog/task/active/REQ-347-T6.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T8.md docs/backlog/task/active/REQ-347-T9.md docs/backlog/task/active/REQ-347-T10.md docs/backlog/task/active/REQ-347-T11.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T13.md docs/backlog/task/active/REQ-347-T14.md implementation_plan.md",
   "environment": {
     "PYTHONIOENCODING": "utf-8",
     "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
     "LOCAL_AUDIT_REASONING_EFFORT": "none"
   },
   "requires_elevated_lm_studio_access": true,
-  "unload_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+  "unload_command": "python <GLOBAL_HELPERS>/local_model_adapter.py unload",
   "planned_artifacts": [
     "docs/design/REQ-347-r5-audit.log",
     "docs/design/REQ-347-r5-audit-trace.json",
@@ -163,7 +163,7 @@
             "test": " REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite AC-6: Adaptive Stage Detection & Wiring Integration renders AdaptiveWorkflowWiring with detected stage tabs and slots"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req336_workflow_mapping.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/test/e2e_req336_workflow_mapping.test.tsx"
       },
       {
         "failed": 1,
@@ -177,7 +177,7 @@
             "test": " REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Header Resource Monitor AC-6 & AC-7: relocates resource monitor to desktop global header with zero preview occlusion"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req339_preview_layout.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/test/e2e_req339_preview_layout.test.tsx"
       },
       {
         "failed": 1,
@@ -191,7 +191,7 @@
             "test": " MatrixGenerationStep AC-4: submits all frozen Studio graphs in one project-scoped request and follows only that batch snapshot"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
       },
       {
         "failed": 10,
@@ -277,7 +277,7 @@
             "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar shows a seconds-based remaining ETA when the generation start and progress are known"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx"
       },
       {
         "failed": 5,
@@ -323,7 +323,7 @@
             "test": " REQ-333 progress bars use managed snapshots on desktop and mobile computes remaining seconds from the managed running-job start time and progress"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
       },
       {
         "failed": 18,
@@ -473,7 +473,7 @@
             "test": " MobileLayout - TagChipEditor Integration REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone resets input retreat on orientationchange and resize if activeElement is not an input"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx"
       },
       {
         "failed": 1,
@@ -487,7 +487,7 @@
             "test": " useGeneratePageState should sync queue and history on visibilitychange when document becomes visible (REQ-159)"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx"
       },
       {
         "failed": 1,
@@ -501,7 +501,7 @@
             "test": " WorkflowConnectionSection groups edits role-node-widget mapping and base model in one workflow update"
           }
         ],
-        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
+        "path": "<REPO_ROOT>/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
       }
     ],
     "path": "tmp/REQ-347-vitest-report.json",

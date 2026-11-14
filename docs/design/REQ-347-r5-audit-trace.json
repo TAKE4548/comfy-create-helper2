@@ -128,7 +128,7 @@
     }
   ],
   "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
-  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T1.md docs/backlog/task/active/REQ-347-T2.md docs/backlog/task/active/REQ-347-T3.md docs/backlog/task/active/REQ-347-T4.md docs/backlog/task/active/REQ-347-T5.md docs/backlog/task/active/REQ-347-T6.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T8.md docs/backlog/task/active/REQ-347-T9.md docs/backlog/task/active/REQ-347-T10.md docs/backlog/task/active/REQ-347-T11.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T13.md docs/backlog/task/active/REQ-347-T14.md implementation_plan.md",
+  "command": "python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T1.md docs/backlog/task/active/REQ-347-T2.md docs/backlog/task/active/REQ-347-T3.md docs/backlog/task/active/REQ-347-T4.md docs/backlog/task/active/REQ-347-T5.md docs/backlog/task/active/REQ-347-T6.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T8.md docs/backlog/task/active/REQ-347-T9.md docs/backlog/task/active/REQ-347-T10.md docs/backlog/task/active/REQ-347-T11.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T13.md docs/backlog/task/active/REQ-347-T14.md implementation_plan.md",
   "environment": {
     "PYTHONIOENCODING": "utf-8",
     "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",

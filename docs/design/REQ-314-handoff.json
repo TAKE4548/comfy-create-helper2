@@ -21,7 +21,7 @@
       ],
       "estimated_changed_lines": 270,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx"
     },
     {
       "task_id": "REQ-314-T2",
@@ -37,7 +37,7 @@
       ],
       "estimated_changed_lines": 245,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx"
     },
     {
       "task_id": "REQ-314-T3",
@@ -52,7 +52,7 @@
       ],
       "estimated_changed_lines": 275,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T4",
@@ -69,7 +69,7 @@
       ],
       "estimated_changed_lines": 280,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx"
     },
     {
       "task_id": "REQ-314-T5",
@@ -85,7 +85,7 @@
       ],
       "estimated_changed_lines": 210,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
     },
     {
       "task_id": "REQ-314-T6",
@@ -99,7 +99,7 @@
       ],
       "estimated_changed_lines": 255,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx"
     },
     {
       "task_id": "REQ-314-T7",
@@ -122,7 +122,7 @@
       ],
       "estimated_changed_lines": 290,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T8",
@@ -137,7 +137,7 @@
       ],
       "estimated_changed_lines": 230,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx"
     },
     {
       "task_id": "REQ-314-T9",
@@ -153,7 +153,7 @@
       ],
       "estimated_changed_lines": 275,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx"
     },
     {
       "task_id": "REQ-314-T10",
@@ -168,7 +168,7 @@
       ],
       "estimated_changed_lines": 245,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx"
     },
     {
       "task_id": "REQ-314-T11",
@@ -183,7 +183,7 @@
       ],
       "estimated_changed_lines": 215,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/ThumbnailSettingsSection.test.tsx src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/ThumbnailSettingsSection.test.tsx src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T12",
@@ -204,7 +204,7 @@
       ],
       "estimated_changed_lines": 290,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.req314.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.req314.test.tsx"
     },
     {
       "task_id": "REQ-314-T13",
@@ -225,7 +225,7 @@
       ],
       "estimated_changed_lines": 140,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2'\npython 'C:/Users/audih/.gemini/antigravity/scripts/doc_mapper.py' docs/specs frontend/src/pages/SettingsPage\ngit diff --check -- docs/specs/SPEC_SETTINGS.md docs/specs/SPEC_COMMON.md docs/specs/SPEC_SUMMARY.md"
+      "verification_command": "Set-Location '<REPO_ROOT>'\npython '<GLOBAL_HELPERS>/doc_mapper.py' docs/specs frontend/src/pages/SettingsPage\ngit diff --check -- docs/specs/SPEC_SETTINGS.md docs/specs/SPEC_COMMON.md docs/specs/SPEC_SUMMARY.md"
     },
     {
       "task_id": "REQ-314-T14",
@@ -239,7 +239,7 @@
       ],
       "estimated_changed_lines": 255,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx"
     },
     {
       "task_id": "REQ-314-T15",
@@ -255,7 +255,7 @@
       ],
       "estimated_changed_lines": 180,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T16",
@@ -271,7 +271,7 @@
       ],
       "estimated_changed_lines": 280,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T17",
@@ -286,7 +286,7 @@
       ],
       "estimated_changed_lines": 150,
       "atomicity": "PASS（設計見積り）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useThumbnailAspectRatio.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useThumbnailAspectRatio.test.tsx"
     },
     {
       "task_id": "REQ-314-T18",
@@ -302,7 +302,7 @@
       ],
       "estimated_changed_lines": 300,
       "atomicity": "PASS（承認済み範囲の再分割）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/__tests__/SettingsPage.test.tsx"
     },
     {
       "task_id": "REQ-314-T19",
@@ -319,7 +319,7 @@
       ],
       "estimated_changed_lines": 120,
       "atomicity": "PASS（承認済み範囲の追加分割）",
-      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
+      "verification_command": "Set-Location '<REPO_ROOT>/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
     }
   ],
   "dependencies": {

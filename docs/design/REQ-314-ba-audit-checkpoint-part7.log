@@ -145,7 +145,7 @@ dialogue = tones＋group dialogue
 ## Verification Command Analysis
 
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx
 ```

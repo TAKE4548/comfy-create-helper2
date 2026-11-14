@@ -3,7 +3,7 @@ REQ-314 local QA audit traces (2026-10-04)
 
 Attempt 1 — sandboxed; retained verbatim from command output
 Command:
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
+python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
 Exit: 0 (adapter returned no audit report)
 Output:
 [Model Auto-Router] Action 'qa-audit' requires model 'local-model'. Enforcing mutual exclusive load...
@@ -17,7 +17,7 @@ Error: Failed to start or connect to local LM Studio API server.
 Error querying LMStudio API: <urlopen error [WinError 10013] アクセス許可で禁じられた方法でソケットにアクセスしようとしました。>
 
 Explicit unload after attempt 1:
-Command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+Command: python <GLOBAL_HELPERS>/local_model_adapter.py unload
 Exit: 0
 Output: [Model Auto-Router] No models currently loaded in LM Studio.
 
@@ -28,7 +28,7 @@ Output: nvidia-smi is not recognized as a command. No numeric VRAM measurement w
 
 Attempt 2 — coordinator-approved elevated execution; complete raw command output
 Command:
-python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
+python <GLOBAL_HELPERS>/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
 Exit: 0
 Output:
 <!-- [LLM Audit Trace: Action=qa-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
@@ -51,14 +51,14 @@ Output:
 
 **Verified Executable Commands:**
 ```powershell
-Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+Set-Location '<REPO_ROOT>/frontend'
 npm run typecheck
 npx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts ...
 ```
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| Absolute paths provided | ✅ | `C:/Users/audih/ws/...` |
+| Absolute paths provided | ✅ | `<USER_HOME>/ws/...` |
 | Exact npm scripts named | ✅ | `typecheck`, `vitest run`, `test` |
 | File globs specific | ⚠️ | Multiple test files listed explicitly |
 
@@ -191,7 +191,7 @@ The test plan is **mechanically executable** but contains **metric ambiguities t
 [Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
 
 Explicit unload after attempt 2:
-Command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+Command: python <GLOBAL_HELPERS>/local_model_adapter.py unload
 Exit: 0
 Output: [Model Auto-Router] No models currently loaded in LM Studio.
 

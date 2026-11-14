@@ -255,7 +255,7 @@
     "source_changes": "アプリソース変更なし"
   },
   "audit": {
-    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py ba-audit",
+    "command": "python <GLOBAL_HELPERS>/local_model_adapter.py ba-audit",
     "exit_code": 0,
     "model": "qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored",
     "domain": "reasoning",

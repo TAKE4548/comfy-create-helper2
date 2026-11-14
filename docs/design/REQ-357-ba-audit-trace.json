@@ -32,7 +32,7 @@
   "cli_exit_code": 0,
   "original_verdict": "CRITICAL FLAWS DETECTED",
   "cleanup": {
-    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+    "command": "python <GLOBAL_HELPERS>/local_model_adapter.py unload",
     "sandbox_permissions": "require_escalated",
     "exit_code": 0,
     "observed": "LM Studio reports no models loaded.",

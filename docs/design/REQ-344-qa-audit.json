@@ -1,6 +1,6 @@
 {
   "pbi_id": "REQ-344",
-  "audit_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-344-test-plan.md",
+  "audit_command": "python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-344-test-plan.md",
   "started_at": "2026-10-13T01:28:47.9164507+09:00",
   "ended_at": "2026-10-13T01:30:33.6780550+09:00",
   "wall_seconds": 105.7616043,
@@ -38,7 +38,7 @@
   ],
   "raw_trace": "REQ-344-qa-audit.log",
   "unload": {
-    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+    "command": "python <GLOBAL_HELPERS>/local_model_adapter.py unload",
     "started_at": "2026-10-13T01:30:39.7780951+09:00",
     "ended_at": "2026-10-13T01:30:42.7578858+09:00",
     "wall_seconds": 2.9797907,

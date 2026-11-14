@@ -16,7 +16,7 @@
   "runtime_version_observed": null,
   "reasoning_control_response_observed": null,
   "runtime_evidence_note": "Adapter succeeded with requested context and reasoning settings; stdout does not expose runtime version or raw reasoning-control evidence.",
-  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 --unload-after qa-audit docs/design/REQ-354-test-plan.md",
+  "command": "python <GLOBAL_HELPERS>/local_model_adapter.py --context-length 32768 --unload-after qa-audit docs/design/REQ-354-test-plan.md",
   "execution": {
     "started_at_utc": "2026-10-12T18:45:46.431653Z",
     "ended_at_utc": "2026-10-12T18:48:03.1948284Z",

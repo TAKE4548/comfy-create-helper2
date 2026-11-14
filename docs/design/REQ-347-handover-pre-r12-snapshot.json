@@ -20,7 +20,7 @@
       ],
       "estimated_changed_lines": 260,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/mappingStageGroups.test.ts"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/mappingStageGroups.test.ts"
     },
     {
       "task_id": "REQ-347-T2",
@@ -35,7 +35,7 @@
       ],
       "estimated_changed_lines": 250,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/components/__tests__/StageInputGroup.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/components/__tests__/StageInputGroup.test.tsx"
     },
     {
       "task_id": "REQ-347-T3",
@@ -52,7 +52,7 @@
       ],
       "estimated_changed_lines": 200,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useMappingStageGroups.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useMappingStageGroups.test.tsx"
     },
     {
       "task_id": "REQ-347-T4",
@@ -69,7 +69,7 @@
       ],
       "estimated_changed_lines": 220,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx"
     },
     {
       "task_id": "REQ-347-T5",
@@ -86,7 +86,7 @@
       ],
       "estimated_changed_lines": 300,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx\nnpx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx\nnpx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
     },
     {
       "task_id": "REQ-347-T6",
@@ -100,7 +100,7 @@
       ],
       "estimated_changed_lines": 260,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/wiringStageGroups.test.ts"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/wiringStageGroups.test.ts"
     },
     {
       "task_id": "REQ-347-T7",
@@ -116,7 +116,7 @@
       ],
       "estimated_changed_lines": 300,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/components/AdaptiveWorkflowWiring.tsx",
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/components/AdaptiveWorkflowWiring.tsx",
       "measured_changed_lines": 255
     },
     {
@@ -133,7 +133,7 @@
       ],
       "estimated_changed_lines": 300,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_settings_stage_groups.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_settings_stage_groups.test.tsx"
     },
     {
       "task_id": "REQ-347-T9",
@@ -149,7 +149,7 @@
       ],
       "estimated_changed_lines": 260,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_generate_stage_groups.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_generate_stage_groups.test.tsx"
     },
     {
       "task_id": "REQ-347-T10",
@@ -163,10 +163,10 @@
       ],
       "estimated_changed_lines": 160,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2\nrg -n 'REQ-347|ステージ|stage|追従|scroll|対応付け' docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md"
+      "verification_command": "Set-Location <REPO_ROOT>\nrg -n 'REQ-347|ステージ|stage|追従|scroll|対応付け' docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md"
     },
     {
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx src/test/e2e_req339_preview_layout.test.tsx",
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx src/test/e2e_req339_preview_layout.test.tsx",
       "title": "Desktop grouped consumerの既存test Provider fixture同期",
       "card_path": "docs/backlog/task/active/REQ-347-T11.md",
       "impacted_files": [
@@ -183,7 +183,7 @@
       "subsystem": "frontend"
     },
     {
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req336_workflow_mapping.test.tsx src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx",
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req336_workflow_mapping.test.tsx src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx",
       "title": "Settings工程groupの旧UI期待同期",
       "card_path": "docs/backlog/task/active/REQ-347-T12.md",
       "impacted_files": [
@@ -200,7 +200,7 @@
       "subsystem": "frontend"
     },
     {
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2\nbackend\\.venv\\Scripts\\python -c \"import sys,json;sys.path.insert(0,'backend');from app.schemas.workflow import WorkflowMappingCreate,WorkflowMappingRead;from pathlib import Path;s=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(s[m.__name__]['properties']['variant_id']==m.model_json_schema()['properties']['variant_id'] and 'variant_id' not in s[m.__name__].get('required',[]) for m in (WorkflowMappingCreate,WorkflowMappingRead));print('Pydantic field parity OK')\"\npython -c \"import json,yaml;from pathlib import Path;a=yaml.safe_load(Path('docs/openapi.yaml').read_text(encoding='utf-8'))['components']['schemas'];b=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(a[n]['properties']['variant_id']==b[n]['properties']['variant_id'] and a[n].get('required',[])==b[n].get('required',[]) and 'variant_id' not in a[n].get('required',[]) for n in ('WorkflowMappingCreate','WorkflowMappingRead'));print('OpenAPI snapshot parity OK')\"\npython C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/openapi.yaml get-endpoint '/api/workflows/{workflow_id}' put",
+      "verification_command": "Set-Location <REPO_ROOT>\nbackend\\.venv\\Scripts\\python -c \"import sys,json;sys.path.insert(0,'backend');from app.schemas.workflow import WorkflowMappingCreate,WorkflowMappingRead;from pathlib import Path;s=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(s[m.__name__]['properties']['variant_id']==m.model_json_schema()['properties']['variant_id'] and 'variant_id' not in s[m.__name__].get('required',[]) for m in (WorkflowMappingCreate,WorkflowMappingRead));print('Pydantic field parity OK')\"\npython -c \"import json,yaml;from pathlib import Path;a=yaml.safe_load(Path('docs/openapi.yaml').read_text(encoding='utf-8'))['components']['schemas'];b=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(a[n]['properties']['variant_id']==b[n]['properties']['variant_id'] and a[n].get('required',[])==b[n].get('required',[]) and 'variant_id' not in a[n].get('required',[]) for n in ('WorkflowMappingCreate','WorkflowMappingRead'));print('OpenAPI snapshot parity OK')\"\npython <GLOBAL_HELPERS>/openapi_parser.py docs/openapi.yaml get-endpoint '/api/workflows/{workflow_id}' put",
       "title": "Workflow variant_idのOpenAPI snapshot同期",
       "card_path": "docs/backlog/task/active/REQ-347-T13.md",
       "impacted_files": [
@@ -214,7 +214,7 @@
       "subsystem": "system"
     },
     {
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx",
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx",
       "title": "可視復帰の履歴baseline条件を既存testへ同期",
       "card_path": "docs/backlog/task/active/REQ-347-T14.md",
       "impacted_files": [
@@ -240,7 +240,7 @@
       "estimated_changed_lines": 150,
       "measured_changed_lines": 105,
       "atomicity": "PASS",
-      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx"
+      "verification_command": "Set-Location <REPO_ROOT>/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx"
     }
   ],
   "trade_offs_and_risks": "CSS stickyの境界と入力非遮蔽は各3領域の実ブラウザー証拠が必要。Settingsはタブから連続一覧になり専用scrollを持つ。初期metadata欠落はunknown/fallback表示で入力保持。未設定候補拡張はREQ-348。同期・seed・chips・assets・presetは回帰対象。成功保存後workflow cache通知をT8に含める。",
@@ -285,7 +285,7 @@
   "implementation_tests_run": false,
   "review_gate": {
     "status": "initial-review-approved-autonomous-revision-authorized",
-    "source": "C:/Users/audih/.gemini/config/skills/dev-design/SKILL.md",
+    "source": "<USER_HOME>/.gemini/config/skills/dev-design/SKILL.md",
     "reason": "2026-10-12ユーザー追加指示により、通常のエンジニア差し戻しはArchitectが自律修正し、再承認待ちで止めない。今回の取得接続の明確化は承認済み要件内であり人間の新規判断事項はない。初回レビュー承認とこの追加指示を実装再開の承認根拠として親調整役へ返す。"
   },
   "limitations": [
