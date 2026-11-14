@@ -150,11 +150,11 @@ systemタブの接続/VRAM/表示・操作カードには、Supervisor、Windows
 
 ### 3-1-1. 画面レイアウト（REQ-365）
 
-workflowsタブは `xl`（>=1280px）で2カラムとし、左=ワークフロー（上）・BaseModel（下）、右=MappingMasterを配置する。左カラムはRow-Span余白を作らない。<1280pxはワークフロー→MappingMaster→BaseModelの順に縦積みする。この並べ替えはCSS `order` のみで行い、データ順序およびAPIに影響しない。
+workflowsタブは `xl`（>=1280px）で2カラムとし、左=ワークフロー（上）・BaseModel（下）、右=MappingMasterを配置する。左カラムはRow-Span余白を作らない。<1280pxはワークフロー→MappingMaster→BaseModelの順に縦積みする。この並べ替えはCSS `order` のみで行い、データ順序およびAPIに影響しない。`xl`（>=1280px）2カラム表示時は、左ペイン（ワークフロー管理＋BaseModel）と右ペイン（MappingMaster）のうち短いほうの自然高さに合わせて長いほうの一覧（ワークフロー管理一覧またはMappingMaster一覧、最小床 240px）を内部スクロールさせ、片側ペインのみが縦長肥大化しないようにする。これは [SPEC_COMMON.md](./SPEC_COMMON.md) §1-6（§1-6-2 / §1-6-3） MUI-02（独立スクロールの仕様書明記例外）に基づく設計である。`<1280px` の単一カラム時は内部スクロール上限を解除し、ページ全体の縦スクロールとする。
 
 モバイル（<768px）ではタブバーを横スワイプ（snap）にし、操作対象は44×44px以上とする。ページ下部余白は `pb-[calc(6rem+env(safe-area-inset-bottom))]` とし、768px以上では解除する。
 
-MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジとする。MappingMaster行のバッジは入力型、`Variant N`（そのMasterのVariant数）、ステージ名（モバイルは先頭のステージ＋`+N stages`）、基本無効（`default_enabled=false` のときのみ）とし、`+N classes` は表示しない。対象ノード情報は一覧にもボタンの `aria-label` にも含めず、編集ボタンの `aria-label` は「<名称> のマッピング設定を編集（Variant N件）」とする。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
+MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジとし、MappingMaster行のこの2行構成はモバイル（<768px）およびデスクトップ（>=768px）の双方に適用する。MappingMaster行のバッジは入力型、`Variant N`（そのMasterのVariant数）、ステージ名（モバイルは先頭のステージ＋`+N stages`）、基本無効（`default_enabled=false` のときのみ）とし、`+N classes` は表示しない。対象ノード情報は一覧にもボタンの `aria-label` にも含めず、編集ボタンの `aria-label` は「<名称> のマッピング設定を編集（Variant N件）」とする。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
 
 
 ### 3-1-2. モバイルSettingsの操作契約（REQ-381）

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Settings, Layers, ChevronDown } from 'lucide-react'
 import { LS_KEYS } from '../utils/localStorageKeys'
 import { useSystemStats } from '../hooks/useSystemStats'
@@ -79,6 +79,42 @@ function readDetails(): DetailsState {
   }
 }
 
+const MIN_SCROLL_LIST_HEIGHT = 240
+const WORKFLOWS_GRID_GAP_PX = 24
+
+interface PaneMaxHeights {
+  workflow?: number
+  mapping?: number
+}
+
+function computeWorkflowsPaneHeights(
+  wfCard: HTMLElement,
+  bmCard: HTMLElement,
+  mpCard: HTMLElement,
+): PaneMaxHeights {
+  const wfList = wfCard.querySelector<HTMLElement>('[data-testid="workflow-list-scroll"]')
+  const mpList = mpCard.querySelector<HTMLElement>('[data-testid="mapping-master-list-scroll"]')
+
+  const wfChrome = wfList ? wfCard.offsetHeight - wfList.clientHeight : wfCard.offsetHeight
+  const leftNatural = wfChrome + (wfList?.scrollHeight ?? 0) + WORKFLOWS_GRID_GAP_PX + bmCard.offsetHeight
+
+  const mpChrome = mpList ? mpCard.offsetHeight - mpList.clientHeight : mpCard.offsetHeight
+  const rightNatural = mpChrome + (mpList?.scrollHeight ?? 0)
+
+  const target = Math.min(leftNatural, rightNatural)
+
+  return {
+    workflow:
+      leftNatural > target && wfList
+        ? Math.max(MIN_SCROLL_LIST_HEIGHT, Math.floor(target - wfChrome - WORKFLOWS_GRID_GAP_PX - bmCard.offsetHeight))
+        : undefined,
+    mapping:
+      rightNatural > target && mpList
+        ? Math.max(MIN_SCROLL_LIST_HEIGHT, Math.floor(target - mpChrome))
+        : undefined,
+  }
+}
+
 export function SettingsPage() {
   const { activeTab, selectTab } = useSettingsTab()
   const isMobile = useSettingsMobile()
@@ -86,6 +122,57 @@ export function SettingsPage() {
   useSystemStats()
   const [expandedSections, setExpandedSections] = useState(DEFAULT_SECTIONS)
   const [details, setDetails] = useState(readDetails)
+  const wfCardRef = useRef<HTMLDivElement>(null)
+  const mpCardRef = useRef<HTMLDivElement>(null)
+  const bmCardRef = useRef<HTMLDivElement>(null)
+  const [paneMaxHeights, setPaneMaxHeights] = useState<PaneMaxHeights>({})
+
+  useLayoutEffect(() => {
+    const reset = () => {
+      setPaneMaxHeights((prev) => (prev.workflow === undefined && prev.mapping === undefined ? prev : {}))
+    }
+
+    if (activeTab !== 'workflows' || typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      reset()
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(min-width: 1280px)')
+    const measure = () => {
+      if (!mediaQuery.matches) {
+        reset()
+        return
+      }
+      const wfCard = wfCardRef.current
+      const bmCard = bmCardRef.current
+      const mpCard = mpCardRef.current
+      if (!wfCard || !bmCard || !mpCard) {
+        reset()
+        return
+      }
+      const next = computeWorkflowsPaneHeights(wfCard, bmCard, mpCard)
+      setPaneMaxHeights((prev) => (prev.workflow === next.workflow && prev.mapping === next.mapping ? prev : next))
+    }
+
+    measure()
+
+    let observer: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure)
+      if (wfCardRef.current) observer.observe(wfCardRef.current)
+      if (bmCardRef.current) observer.observe(bmCardRef.current)
+      if (mpCardRef.current) observer.observe(mpCardRef.current)
+    }
+
+    mediaQuery.addEventListener?.('change', measure)
+    window.addEventListener('resize', measure)
+
+    return () => {
+      observer?.disconnect()
+      mediaQuery.removeEventListener?.('change', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [activeTab, expandedSections])
 
   useEffect(() => {
     try {
@@ -106,13 +193,13 @@ export function SettingsPage() {
     {
       id: 'workflows',
       content: <div data-testid="settings-workflows-grid" className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2 xl:grid-rows-[auto_1fr]">
-        <div data-testid="settings-card-workflow" className="order-1 min-w-0 xl:col-start-1 xl:row-start-1">
-        <WorkflowConnectionSection group="workflows" isExpandedLongPress={expandedSections.longPress} onToggleLongPress={() => toggleSection('longPress')} isExpandedWorkflows={expandedSections.workflows} onToggleWorkflows={() => toggleSection('workflows')} isExpandedConnections={expandedSections.connections} onToggleConnections={() => toggleSection('connections')} />
+        <div ref={wfCardRef} data-testid="settings-card-workflow" className="order-1 min-w-0 xl:col-start-1 xl:row-start-1">
+        <WorkflowConnectionSection group="workflows" isExpandedLongPress={expandedSections.longPress} onToggleLongPress={() => toggleSection('longPress')} isExpandedWorkflows={expandedSections.workflows} onToggleWorkflows={() => toggleSection('workflows')} isExpandedConnections={expandedSections.connections} onToggleConnections={() => toggleSection('connections')} workflowListMaxHeight={paneMaxHeights.workflow} />
         </div>
-        <div data-testid="settings-card-mapping" className="order-2 min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
-        <MappingMasterSection isExpanded={expandedSections.mappingMasters} onToggle={() => toggleSection('mappingMasters')} />
+        <div ref={mpCardRef} data-testid="settings-card-mapping" className="order-2 min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
+        <MappingMasterSection isExpanded={expandedSections.mappingMasters} onToggle={() => toggleSection('mappingMasters')} listScrollMaxHeight={paneMaxHeights.mapping} />
         </div>
-        <div data-testid="settings-card-basemodel" className="order-3 min-w-0 settings-density-basemodel xl:col-start-1 xl:row-start-2">
+        <div ref={bmCardRef} data-testid="settings-card-basemodel" className="order-3 min-w-0 settings-density-basemodel xl:col-start-1 xl:row-start-2">
         <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
           <button type="button" onClick={() => toggleSection('baseModels')} className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none">
             <div className="flex items-center gap-2"><Layers size={15} className="text-[#7C6FDD]" /><h2 className="text-sm font-semibold text-zinc-300">Base Model Settings</h2><span className="text-xs text-zinc-600">— ベースモデルとチェックポイントの関連付け管理</span></div>

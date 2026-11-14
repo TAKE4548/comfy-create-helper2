@@ -88,6 +88,7 @@ export interface WorkflowConnectionSectionProps {
   onToggleWorkflows: () => void
   isExpandedConnections: boolean
   onToggleConnections: () => void
+  workflowListMaxHeight?: number
 }
 
 export function WorkflowConnectionSection({
@@ -99,6 +100,7 @@ export function WorkflowConnectionSection({
   onToggleWorkflows,
   isExpandedConnections,
   onToggleConnections,
+  workflowListMaxHeight,
 }: WorkflowConnectionSectionProps) {
   const qc = useQueryClient()
   const [saved, setSaved] = useState<string | null>(null)
@@ -700,7 +702,15 @@ export function WorkflowConnectionSection({
               </div>
             ) : (
               <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden">
-                <div className="divide-y divide-[rgba(255,255,255,0.04)]">
+                <div
+                  data-testid="workflow-list-scroll"
+                  className={
+                    workflowListMaxHeight != null
+                      ? 'divide-y divide-[rgba(255,255,255,0.04)] overflow-y-auto overscroll-contain'
+                      : 'divide-y divide-[rgba(255,255,255,0.04)]'
+                  }
+                  style={workflowListMaxHeight != null ? { maxHeight: `${workflowListMaxHeight}px` } : undefined}
+                >
                   {workflows?.map((wf) => {
                     const isExpanded = expandedPresetWorkflowId === wf.id
                     return (

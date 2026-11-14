@@ -52,6 +52,7 @@ const MANAGEMENT_MENU_OPEN_EVENT = 'settings-management-menu-open'
 export interface MappingMasterSectionProps {
   isExpanded: boolean
   onToggle: () => void
+  listScrollMaxHeight?: number
 }
 
 interface MasterRowProps {
@@ -175,7 +176,11 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
   )
 }
 
-export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSectionProps) {
+export function MappingMasterSection({
+  isExpanded,
+  onToggle,
+  listScrollMaxHeight,
+}: MappingMasterSectionProps) {
   const qc = useQueryClient()
   const isMobile = useSettingsMobile()
   const managementMenuId = `mapping-management-${useId().replace(/:/g, '')}`
@@ -658,7 +663,19 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
                     items={displayedMasters.map((m) => m.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="divide-y divide-zinc-800">
+                    <div
+                      data-testid="mapping-master-list-scroll"
+                      className={
+                        listScrollMaxHeight != null
+                          ? 'divide-y divide-zinc-800 overflow-y-auto overscroll-contain'
+                          : 'divide-y divide-zinc-800'
+                      }
+                      style={
+                        listScrollMaxHeight != null
+                          ? { maxHeight: `${listScrollMaxHeight}px` }
+                          : undefined
+                      }
+                    >
                       {displayedMasters.map((mm) => (
                         <MasterRow
                           key={mm.id}

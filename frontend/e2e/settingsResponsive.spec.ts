@@ -260,6 +260,99 @@ test.describe('Settings responsive E2E', () => {
     await expect(page.getByTestId('settings-card-mapping').locator('thead:visible')).toHaveCount(0);
   });
 
+  test('[REQ-430/AC-1] 1280px and 375px: mapping master title stays visible above stage badges', async ({ page }) => {
+    const multiStageMasters: MappingMasterV2[] = [
+      {
+        id: 101,
+        group_id: null,
+        base_key: 'multi_stage_prompt',
+        name: 'とても長い名称のマッピングマスタ（複数ステージ構成時でもタイトルが埋没しない検証用）',
+        param_name: 'text',
+        input_type: 'textarea',
+        expected_class_types: ['CLIPTextEncode'],
+        base_title_patterns: ['positive'],
+        sort_order: 1,
+        variants: [
+          { id: 1, master_id: 101, stage_id: 1, stage_key: 'base', stage_name: 'Base', stage_suffix: '', custom_role_override: null, computed_role: 'multi_stage_prompt', extra_title_patterns: null, is_enabled: true },
+          { id: 2, master_id: 101, stage_id: 2, stage_key: 'refiner', stage_name: 'Refiner', stage_suffix: '_refiner', custom_role_override: null, computed_role: 'multi_stage_prompt_refiner', extra_title_patterns: null, is_enabled: true },
+          { id: 3, master_id: 101, stage_id: 3, stage_key: 'upscale', stage_name: 'Upscale', stage_suffix: '_upscale', custom_role_override: null, computed_role: 'multi_stage_prompt_upscale', extra_title_patterns: null, is_enabled: true },
+          { id: 4, master_id: 101, stage_id: 4, stage_key: 'detailer', stage_name: 'Detailer', stage_suffix: '_detailer', custom_role_override: null, computed_role: 'multi_stage_prompt_detailer', extra_title_patterns: null, is_enabled: true },
+        ],
+      },
+    ];
+
+    for (const vw of [1280, 375]) {
+      await openSettings(page, vw, 900);
+      await page.route((url) => url.pathname === '/api/mapping-masters', async (route) => {
+        if (route.request().method() !== 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(multiStageMasters) });
+      });
+      await page.reload();
+      await expect(page.locator('#settings-panel-workflows')).toBeVisible();
+
+      const card = page.locator(MASTER_CARD).first();
+      await expect(card).toBeVisible();
+      await expect(card).toHaveCSS('display', 'grid');
+
+      const cb = await box(card);
+      const tb = await box(card.locator('.settings-mobile-card__title'));
+      const ab = await box(card.locator('.settings-mobile-card__actions'));
+      const bb = await box(card.locator('.settings-mobile-card__badges'));
+
+      expect(tb.y + tb.height).toBeLessThanOrEqual(bb.y + 1);
+      expect(tb.width).toBeGreaterThanOrEqual(vw >= 1280 ? 150 : 120);
+      expect(cb.x + cb.width - (ab.x + ab.width)).toBeLessThanOrEqual(16);
+    }
+  });
+
+  test('[REQ-430/AC-2] 1280px: long workflow list scrolls internally to match shorter mapping pane', async ({ page }) => {
+    const manyWorkflows = Array.from({ length: 15 }, (_, index) => ({
+      ...SETTINGS_WORKFLOW,
+      id: index + 1,
+      name: `wf-e2e-${index + 1}`,
+    }));
+    const eightMasters: MappingMasterV2[] = Array.from({ length: 8 }, (_, index) => ({
+      ...MASTERS[1],
+      id: index + 1,
+      base_key: `master_${index + 1}`,
+      name: `Mapping Master ${index + 1}`,
+      sort_order: index + 1,
+    }));
+
+    await openSettings(page, 1280, 800);
+    await page.route((url) => url.pathname === '/api/workflows', async (route) => {
+      if (route.request().method() !== 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manyWorkflows) });
+    });
+    await page.route((url) => url.pathname === '/api/mapping-masters', async (route) => {
+      if (route.request().method() !== 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(eightMasters) });
+    });
+    await page.reload();
+    await expect(page.locator('#settings-panel-workflows')).toBeVisible();
+    await expect(page.getByText('wf-e2e-15')).toBeVisible();
+    await expect(page.getByText('Mapping Master 8')).toBeVisible();
+
+    const wfScroll = page.getByTestId('workflow-list-scroll');
+    await expect(wfScroll).toBeVisible();
+    await expect.poll(async () => wfScroll.evaluate((el) => el.style.maxHeight), { timeout: 10_000 }).not.toBe('');
+
+    const scrollMetrics = await wfScroll.evaluate((el) => ({
+      overflowY: getComputedStyle(el).overflowY,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }));
+    expect(scrollMetrics.overflowY).toBe('auto');
+    expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+
+    const bmBox = await box(page.getByTestId('settings-card-basemodel'));
+    const mpBox = await box(page.getByTestId('settings-card-mapping'));
+    expect(Math.abs(bmBox.y + bmBox.height - (mpBox.y + mpBox.height))).toBeLessThanOrEqual(48);
+
+    await page.setViewportSize({ width: 1279, height: 800 });
+    await expect.poll(async () => wfScroll.evaluate((el) => el.style.maxHeight), { timeout: 10_000 }).toBe('');
+  });
+
   test('[REQ-365/AC-9] 375px: param type manager opens as bottom sheet', async ({ page }) => {
     const vh = 667;
     await openSettings(page, 375, vh);

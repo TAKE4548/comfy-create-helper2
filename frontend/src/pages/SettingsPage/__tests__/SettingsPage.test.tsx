@@ -436,6 +436,87 @@ describe('SettingsPage Integration', () => {
       expect(css).not.toContain('85dvh')
       expect(css).not.toMatch(/\[role='dialog'\]\s*\{[^}]*max-height/)
     })
+
+    it('[REQ-430/AC-2] syncs workflow and mapping scroll maxHeight to shorter pane at xl and clears below xl', async () => {
+      let isXl = true
+      const xlListeners = new Set<(event: MediaQueryListEvent) => void>()
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn((query: string) => ({
+          get matches() {
+            return query === '(min-width: 1280px)' ? isXl : false
+          },
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+            if (query === '(min-width: 1280px)') xlListeners.add(listener)
+          }),
+          removeEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+            if (query === '(min-width: 1280px)') xlListeners.delete(listener)
+          }),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      )
+
+      const resizeObservers: Array<{ cb: ResizeObserverCallback; observer: ResizeObserver }> = []
+      vi.stubGlobal(
+        'ResizeObserver',
+        class MockResizeObserver implements ResizeObserver {
+          constructor(cb: ResizeObserverCallback) {
+            resizeObservers.push({ cb, observer: this })
+          }
+          observe = vi.fn()
+          unobserve = vi.fn()
+          disconnect = vi.fn()
+        },
+      )
+
+      try {
+        window.location.hash = '#workflows'
+        renderComponent()
+
+        const wfCard = screen.getByTestId('settings-card-workflow')
+        const bmCard = screen.getByTestId('settings-card-basemodel')
+        const mpCard = screen.getByTestId('settings-card-mapping')
+        const wfList = await screen.findByTestId('workflow-list-scroll')
+        const mpList = await screen.findByTestId('mapping-master-list-scroll')
+
+        const defineHeight = (el: HTMLElement, prop: 'offsetHeight' | 'clientHeight' | 'scrollHeight', value: number) => {
+          Object.defineProperty(el, prop, { configurable: true, get: () => value })
+        }
+
+        // Left natural: 100 (chrome) + 800 (list) + 24 (gap) + 150 (basemodel) = 1074
+        // Right natural: 100 (chrome) + 500 (list) = 600
+        // Expected workflow maxHeight = max(240, 600 - 100 - 24 - 150) = 326
+        defineHeight(wfCard, 'offsetHeight', 900)
+        defineHeight(wfList, 'clientHeight', 800)
+        defineHeight(wfList, 'scrollHeight', 800)
+        defineHeight(bmCard, 'offsetHeight', 150)
+        defineHeight(mpCard, 'offsetHeight', 600)
+        defineHeight(mpList, 'clientHeight', 500)
+        defineHeight(mpList, 'scrollHeight', 500)
+
+        act(() => {
+          resizeObservers.forEach(({ cb, observer }) => cb([], observer))
+        })
+
+        expect(wfList.style.maxHeight).toBe('326px')
+        expect(parseInt(wfList.style.maxHeight, 10)).toBeGreaterThanOrEqual(240)
+        expect(mpList.style.maxHeight).toBe('')
+
+        act(() => {
+          isXl = false
+          xlListeners.forEach((listener) => listener({ matches: false } as MediaQueryListEvent))
+        })
+
+        expect(wfList.style.maxHeight).toBe('')
+        expect(mpList.style.maxHeight).toBe('')
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
   })
 
   describe('Speech Tone Presets (REQ-286)', () => {

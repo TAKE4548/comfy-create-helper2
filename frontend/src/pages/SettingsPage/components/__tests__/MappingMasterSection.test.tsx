@@ -459,3 +459,67 @@ describe('MappingMasterSection responsive management menu', () => {
   }, 20000)
 
 })
+
+describe('MappingMasterSection layout and scroll contract (REQ-430)', () => {
+  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+  afterEach(() => {
+    server.resetHandlers()
+    vi.unstubAllGlobals()
+  })
+  afterAll(() => server.close())
+
+  it('[REQ-430/AC-1] separates title and actions from stage badges across viewports and applies listScrollMaxHeight', async () => {
+    const multiVariantMaster = {
+      id: 101,
+      group_id: null,
+      base_key: 'sampler_seed',
+      name: 'Very Long Mapping Master Name For Multi Stage Layout Verification',
+      param_name: 'seed',
+      input_type: 'int',
+      expected_class_types: ['KSampler'],
+      base_title_patterns: null,
+      sort_order: 1,
+      variants: [
+        { id: 1, master_id: 101, stage_id: 1, stage_key: 'base', stage_name: 'Base', stage_suffix: '', custom_role_override: null, computed_role: 'sampler_seed', extra_title_patterns: null, is_enabled: true },
+        { id: 2, master_id: 101, stage_id: 2, stage_key: 'refiner', stage_name: 'Refiner', stage_suffix: '_refiner', custom_role_override: null, computed_role: 'sampler_seed_refiner', extra_title_patterns: null, is_enabled: true },
+        { id: 3, master_id: 101, stage_id: 3, stage_key: 'upscale', stage_name: 'Upscale', stage_suffix: '_upscale', custom_role_override: null, computed_role: 'sampler_seed_upscale', extra_title_patterns: null, is_enabled: true },
+        { id: 4, master_id: 101, stage_id: 4, stage_key: 'detailer', stage_name: 'Detailer', stage_suffix: '_detailer', custom_role_override: null, computed_role: 'sampler_seed_detailer', extra_title_patterns: null, is_enabled: true },
+      ],
+    }
+
+    serveMappingModalReads()
+    server.use(
+      http.get('/api/mapping-masters', () => HttpResponse.json([multiVariantMaster])),
+    )
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <MappingMasterSection isExpanded onToggle={vi.fn()} listScrollMaxHeight={320} />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText(multiVariantMaster.name)).toBeInTheDocument()
+
+    const scrollContainer = screen.getByTestId('mapping-master-list-scroll')
+    expect(scrollContainer).toHaveClass('overflow-y-auto')
+    expect(scrollContainer).toHaveStyle({ maxHeight: '320px' })
+
+    const card = scrollContainer.querySelector('.settings-mobile-card') as HTMLElement
+    expect(card).not.toBeNull()
+
+    const titleEl = card.querySelector('.settings-mobile-card__title') as HTMLElement
+    const actionsEl = card.querySelector('.settings-mobile-card__actions') as HTMLElement
+    const badgesEl = card.querySelector('.settings-mobile-card__badges') as HTMLElement
+
+    expect(titleEl).toBeInTheDocument()
+    expect(actionsEl).toBeInTheDocument()
+    expect(badgesEl).toBeInTheDocument()
+    expect(titleEl.contains(actionsEl)).toBe(false)
+    expect(titleEl.contains(badgesEl)).toBe(false)
+    expect(actionsEl.contains(badgesEl)).toBe(false)
+    expect(within(titleEl).getByText(multiVariantMaster.name)).toBeInTheDocument()
+    expect(within(badgesEl).getByTestId('master-variant-count')).toHaveTextContent('Variant 4')
+    expect(within(actionsEl).getByRole('button', { name: /編集/ })).toBeInTheDocument()
+  })
+})
