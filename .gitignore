@@ -141,6 +141,7 @@ Thumbs.db
 db/snapshots/
 db/thumbnails/
 db/full_cache/
+db/ref_images/
 *.bak
 *.db.bak
 *.db-journal
