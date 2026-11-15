@@ -303,3 +303,100 @@ describe('GenerationGallerySection REQ-383', () => {
   })
 })
 
+describe('GenerationGallerySection REQ-265', () => {
+  it('[REQ-265/AC-1] renders dedicated snapshot restore button only on snapshots tab and opens modal on click (desktop & mobile)', () => {
+    const c = controller()
+    const openSnapshotRestoreModal = vi.fn()
+
+    // history tab: button must not be rendered
+    const historyView = gallery(c, {
+      thumbnailTab: 'history',
+      sortedSnapshots: [{ id: 1, image_path: url, params: {} }],
+      openSnapshotRestoreModal,
+    })
+    expect(document.getElementById('open-snapshot-restore-btn')).toBeNull()
+    historyView.unmount()
+
+    // snapshots tab (desktop): button rendered, enabled, calls openSnapshotRestoreModal
+    const desktopView = gallery(
+      c,
+      {
+        thumbnailTab: 'snapshots',
+        sortedSnapshots: [{ id: 1, image_path: url, params: {} }],
+        openSnapshotRestoreModal,
+      },
+      false
+    )
+    const desktopBtn = document.getElementById('open-snapshot-restore-btn')
+    expect(desktopBtn).not.toBeNull()
+    expect(desktopBtn).not.toBeDisabled()
+    expect(desktopBtn).toHaveClass('touch-manipulation')
+    fireEvent.click(desktopBtn!)
+    expect(openSnapshotRestoreModal).toHaveBeenCalledTimes(1)
+    desktopView.unmount()
+
+    // snapshots tab (mobile): mobile id rendered and disabled when snapshots empty
+    const mobileEmptyView = gallery(
+      c,
+      {
+        thumbnailTab: 'snapshots',
+        sortedSnapshots: [],
+        openSnapshotRestoreModal,
+      },
+      true
+    )
+    const mobileBtn = document.getElementById('open-snapshot-restore-btn-mobile')
+    expect(mobileBtn).not.toBeNull()
+    expect(mobileBtn).toBeDisabled()
+    mobileEmptyView.unmount()
+  })
+
+  it('[REQ-265/AC-2] calls gallery.handleSnapshotClick with snapshot id when snapshot card is clicked', () => {
+    const c = controller()
+    const handleSnapshotClick = vi.fn()
+    const state = {
+      thumbnailTab: 'snapshots',
+      setThumbnailTab: vi.fn(),
+      sortOrder: 'desc',
+      setSortOrder: vi.fn(),
+      previewAutoFollow: false,
+      handleToggleAutoFollow: vi.fn(),
+      filterOwnSession: false,
+      setFilterOwnSession: vi.fn(),
+      sortedDisplayImages: [url],
+      otherSessionCount: 0,
+      isMultiSelectMode: false,
+      selectedIds: new Set(),
+      selectAll: vi.fn(),
+      clearSelection: vi.fn(),
+      setIsSaveModalOpen: vi.fn(),
+      exitMultiSelectMode: vi.fn(),
+      isSelected: vi.fn(() => false),
+      selectedImg: url,
+      getSetNameForImage: vi.fn(() => null),
+      sortedSnapshots: [{ id: 42, image_path: url, params: { positive: '1girl' } }],
+      trialAvailability: c,
+      residualHistoryStatus: 'complete',
+      retryResidualHistory: vi.fn(),
+      openSnapshotRestoreModal: vi.fn(),
+    }
+
+    render(
+      <GenerationGallerySection
+        state={state as any}
+        isMobile={false}
+        gallery={{
+          scrollContainerRef: { current: null },
+          handleWheelScroll: vi.fn(),
+          getThumbnailItemProps: () => ({ onClick: vi.fn(), onTouchStart: vi.fn(), onKeyDown: vi.fn() }),
+          handleSnapshotClick,
+        } as any}
+      />
+    )
+
+    fireEvent.click(screen.getByAltText('Snapshot').closest('button')!)
+    expect(handleSnapshotClick).toHaveBeenCalledWith(42)
+  })
+})
+
+

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Play, Pause, CheckSquare, Square, ImageOff, X } from 'lucide-react'
+import { Play, Pause, CheckSquare, Square, ImageOff, X, RotateCcw } from 'lucide-react'
 import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 import { getPromptPrefix } from '../../../utils/formatUtils'
@@ -105,7 +105,7 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
           : 'flex-shrink-0 flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1.5 mb-2'
       }
     >
-      <div className={isMobile ? 'flex gap-3' : 'flex gap-4'}>
+      <div className={isMobile ? 'flex gap-3 min-w-0' : 'flex gap-4 min-w-0'}>
         {(['history', 'snapshots'] as const).map((tab) => (
           <button
             key={tab}
@@ -197,6 +197,19 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
               {isMobile ? '自セッションのみ' : '自セッションのみ表示'}
             </span>
           </label>
+        )}
+        {thumbnailTab === 'snapshots' && (
+          <button
+            type="button"
+            id={isMobile ? 'open-snapshot-restore-btn-mobile' : 'open-snapshot-restore-btn'}
+            onClick={() => state.openSnapshotRestoreModal?.()}
+            disabled={!sortedSnapshots || sortedSnapshots.length === 0}
+            aria-label="スナップショットからプリセットに復元"
+            className="relative before:absolute before:-inset-2 before:content-[''] touch-manipulation flex items-center gap-1 px-2 py-1 rounded-md border border-accent-green/40 bg-accent-green/10 text-accent-green hover:bg-accent-green/20 disabled:opacity-40 disabled:cursor-not-allowed text-[11px] font-semibold transition-colors whitespace-nowrap"
+          >
+            <RotateCcw size={isMobile ? 11 : 12} aria-hidden="true" />
+            <span>プリセットに復元</span>
+          </button>
         )}
       </div>
     </div>

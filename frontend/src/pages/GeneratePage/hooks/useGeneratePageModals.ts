@@ -20,6 +20,18 @@ export function useGeneratePageModals() {
   const [thumbnailTab, setThumbnailTab] = useState<'history' | 'snapshots'>('history')
   const [isJobModalOpen, setIsJobModalOpen] = useState(false)
   const [isSceneGeneratorOpen, setIsSceneGeneratorOpen] = useState(false)
+  const [isSnapshotRestoreOpen, setIsSnapshotRestoreOpen] = useState(false)
+  const [snapshotRestoreInitialId, setSnapshotRestoreInitialId] = useState<number | null>(null)
+
+  const openSnapshotRestoreModal = (initialSnapshotId?: number) => {
+    setSnapshotRestoreInitialId(initialSnapshotId ?? null)
+    setIsSnapshotRestoreOpen(true)
+  }
+
+  const closeSnapshotRestoreModal = () => {
+    setIsSnapshotRestoreOpen(false)
+    setSnapshotRestoreInitialId(null)
+  }
 
   useEffect(() => {
     if (comfyUrl) setLocalComfyUrl(comfyUrl)
@@ -39,5 +51,9 @@ export function useGeneratePageModals() {
     setIsJobModalOpen,
     isSceneGeneratorOpen,
     setIsSceneGeneratorOpen,
+    isSnapshotRestoreOpen,
+    snapshotRestoreInitialId,
+    openSnapshotRestoreModal,
+    closeSnapshotRestoreModal,
   }
 }

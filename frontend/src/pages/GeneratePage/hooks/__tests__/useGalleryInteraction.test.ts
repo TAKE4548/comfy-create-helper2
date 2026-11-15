@@ -207,23 +207,33 @@ describe('useGalleryInteraction', () => {
     expect(setSelectedImg).toHaveBeenCalledWith('test-img.png')
   })
 
-  it('handleSnapshotClick safely calls onLoadSnapshot if provided and does not throw if undefined', () => {
-    const onLoadSnapshot = vi.fn()
+  it('handleSnapshotClick calls only onPreviewSnapshot without modifying selection or other callbacks and does not throw if undefined', () => {
+    const onPreviewSnapshot = vi.fn()
+    const setSelectedImg = vi.fn()
+    const onOpenModalPreview = vi.fn()
+    const onCenterPreviewImage = vi.fn()
     const multiSelect = createMockMultiSelect()
 
     const { result: withCallback } = renderHook(() =>
       useGalleryInteraction({
         selectedImg: null,
-        setSelectedImg: vi.fn(),
+        setSelectedImg,
         multiSelect,
-        onLoadSnapshot,
+        onOpenModalPreview,
+        onCenterPreviewImage,
+        onPreviewSnapshot,
       })
     )
 
     act(() => {
       withCallback.current.handleSnapshotClick(42)
     })
-    expect(onLoadSnapshot).toHaveBeenCalledWith(42)
+    expect(onPreviewSnapshot).toHaveBeenCalledTimes(1)
+    expect(onPreviewSnapshot).toHaveBeenCalledWith(42)
+    expect(setSelectedImg).not.toHaveBeenCalled()
+    expect(onOpenModalPreview).not.toHaveBeenCalled()
+    expect(onCenterPreviewImage).not.toHaveBeenCalled()
+    expect(multiSelect.handleItemClick).not.toHaveBeenCalled()
 
     const { result: withoutCallback } = renderHook(() =>
       useGalleryInteraction({

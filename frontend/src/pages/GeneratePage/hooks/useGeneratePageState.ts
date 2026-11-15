@@ -118,7 +118,7 @@ export function useGeneratePageState() {
     hasSelectedImage: Boolean(selectedImg),
     modalOpen: Boolean(
       modals.rescanOpen || modals.isSettingsOpen || modals.isJobModalOpen || modals.isSceneGeneratorOpen ||
-      snapshotActions.isSaveModalOpen || displayState.isModalPreviewOpen
+      modals.isSnapshotRestoreOpen || snapshotActions.isSaveModalOpen || displayState.isModalPreviewOpen
     ),
   })
 

@@ -96,7 +96,7 @@ export const MobileLayout = ({
     invalidMappings, textMappings, paramMappings,
     
     // handlers
-    handleLoadSnapshot,
+    openSnapshotRestoreModal,
     handleUpdateMapping,
     handleGenerateSets,
     getIsRoleCollapsed,
@@ -251,7 +251,7 @@ export const MobileLayout = ({
     onOpenModalPreview: (_i) => {
       handleOpenImageSheet()
     },
-    onLoadSnapshot: handleLoadSnapshot,
+    onPreviewSnapshot: openSnapshotRestoreModal,
   })
 
   useEffect(() => {

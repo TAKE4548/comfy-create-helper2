@@ -28,3 +28,17 @@ it('does not invent historical trigger selection when rebuilding a legacy snapsh
   await act(async () => result.current.handleLoadSnapshot(1))
   expect(setAssets.mock.calls[0][0].character[0].triggerSetId).toBeUndefined()
 })
+it('returns true when handleLoadSnapshot succeeds and false when API fails', async () => {
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  getSnapshot.mockResolvedValueOnce({ params: {}, loras: [], tag_sets: [] })
+  const { result } = setup()
+  let ok = false
+  await act(async () => { ok = await result.current.handleLoadSnapshot(10) })
+  expect(ok).toBe(true)
+
+  getSnapshot.mockRejectedValueOnce(new Error('network error'))
+  let failed = true
+  await act(async () => { failed = await result.current.handleLoadSnapshot(11) })
+  expect(failed).toBe(false)
+  errorSpy.mockRestore()
+})

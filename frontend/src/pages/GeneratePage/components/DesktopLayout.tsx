@@ -96,7 +96,7 @@ export const DesktopLayout = ({
     setFilterOwnSession: stateSetFilterOwnSession,
     
     // handlers
-    handleLoadSnapshot,
+    openSnapshotRestoreModal,
     handleUpdateMapping,
     handleOpenModalPreview,
     handleGenerateSets,
@@ -219,7 +219,7 @@ export const DesktopLayout = ({
       isSelected,
       getLongPressHandlers,
     },
-    onLoadSnapshot: handleLoadSnapshot,
+    onPreviewSnapshot: openSnapshotRestoreModal,
     onCenterPreviewImage: handleCenterPreviewImage,
   })
 

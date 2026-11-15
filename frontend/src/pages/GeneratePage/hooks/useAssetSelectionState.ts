@@ -56,7 +56,7 @@ export function useAssetSelectionState({
     handleAddTagSetAssetInternal(role, ts)
   }
 
-  const handleLoadSnapshot = async (id: number) => {
+  const handleLoadSnapshot = async (id: number): Promise<boolean> => {
     try {
       const snapshot = (await snapshotsApi.get(id)) as any
       if (snapshot.params) {
@@ -101,8 +101,10 @@ export function useAssetSelectionState({
         })
       }
       setAppliedAssets(rebuiltAssets)
+      return true
     } catch (e) {
       console.error('Failed to load snapshot details:', e)
+      return false
     }
   }
 

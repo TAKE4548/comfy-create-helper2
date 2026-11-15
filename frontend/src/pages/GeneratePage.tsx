@@ -18,6 +18,7 @@ const loadJobManagementModal = () => import('../components/JobManagementModal').
 const loadAddSnapshotToAlbumModal = () => import('../components/AddSnapshotToAlbumModal').then((m) => ({ default: m.AddSnapshotToAlbumModal }))
 const loadSceneGeneratorModal = () => import('../components/SceneGeneratorModal').then((m) => ({ default: m.SceneGeneratorModal }))
 const loadPresetConflictModal = () => import('../components/PresetConflictModal').then((m) => ({ default: m.PresetConflictModal }))
+const loadSnapshotRestoreModal = () => import('./GeneratePage/components/SnapshotRestoreModal').then((m) => ({ default: m.SnapshotRestoreModal }))
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -91,6 +92,11 @@ export function GeneratePage() {
     bulkDeletePresetsMutation,
     loras,
     tagSets,
+    isSnapshotRestoreOpen,
+    closeSnapshotRestoreModal,
+    snapshotRestoreInitialId,
+    sortedSnapshots,
+    handleLoadSnapshot,
   } = state
 
   return (
@@ -345,6 +351,20 @@ export function GeneratePage() {
             qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
             setIsSceneGeneratorOpen(false)
           },
+        }}
+      />
+      <LazyModalHost
+        mode="while-open"
+        isOpen={isSnapshotRestoreOpen}
+        load={loadSnapshotRestoreModal}
+        label="スナップショットからプリセットに復元"
+        onClose={closeSnapshotRestoreModal}
+        modalProps={{
+          isOpen: isSnapshotRestoreOpen,
+          onClose: closeSnapshotRestoreModal,
+          snapshots: sortedSnapshots || [],
+          initialSnapshotId: snapshotRestoreInitialId,
+          onRestore: handleLoadSnapshot,
         }}
       />
 

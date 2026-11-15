@@ -8,7 +8,7 @@ export interface UseGalleryInteractionOptions {
   setSelectedImg: (img: string | null) => void
   multiSelect: UseMultiSelectReturn<string>
   onOpenModalPreview?: (index: number) => void
-  onLoadSnapshot?: (snapshotId: number) => void
+  onPreviewSnapshot?: (snapshotId: number) => void
   onCenterPreviewImage?: (img: string) => void
 }
 
@@ -39,7 +39,7 @@ export function useGalleryInteraction({
   setSelectedImg,
   multiSelect,
   onOpenModalPreview,
-  onLoadSnapshot,
+  onPreviewSnapshot,
   onCenterPreviewImage,
 }: UseGalleryInteractionOptions): UseGalleryInteractionReturn {
   const [hoverPreviewImg, setHoverPreviewImg] = useState<string | null>(null)
@@ -87,11 +87,9 @@ export function useGalleryInteraction({
 
   const handleSnapshotClick = useCallback(
     (snapshotId: number) => {
-      if (onLoadSnapshot) {
-        onLoadSnapshot(snapshotId)
-      }
+      onPreviewSnapshot?.(snapshotId)
     },
-    [onLoadSnapshot]
+    [onPreviewSnapshot]
   )
 
   const handleWheelScroll = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
