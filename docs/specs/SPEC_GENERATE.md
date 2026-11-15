@@ -395,7 +395,7 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 チェックボックス、ラジオ、レンジスライダー、各種ボタン等の非テキスト入力操作時にもGenerate Batchアクションバーを維持して操作可能とし、下部スクロールコンテナにはpb-[calc(54px+env(safe-area-inset-bottom)+72px)]のパディングを確保してアクションドックとの重なりを防止する。
 プリセットマネージャーはmax-h-[75dvh]のボトムシートとして動作し、Safari下部アドレスバーによる被りを抑止するとともに、全選択/解除・保存・Scene Generator等のアクションバーを最下部にピン留め固定する。
 パラメータパネル（ParamPanel.tsx）はラベル幅とセレクト/ステッパーを1行に収めるスマートレイアウトを採用し、アセット追加モーダル（AddAssetModal.tsx）はパディングを14px（p-3.5）に引き締めてモバイル表示を最適化する。
-リソースホバーモニター（ResourceHoverMonitor.tsx）は、640px以上で資源チップへのホバー時に幅250pxのリソース詳細カード（hover型、`HeaderDropdown` の `hoverBridge` 付き）を、640px未満でVRAMピル（幅96px）のタップ時に幅240pxのリソース詳細オーバーレイ（click型）を表示する。いずれのパネルも `HeaderDropdown`（§4-4-1）でbodyへportalし、fixedでヘッダー下端＋6pxに配置する。重なり順は `--z-header-menu`（60）により、ボトムナビ（50）より前面・共通Modal（100）より背面とし、ヘッダータイトルの隠蔽やモーダルとの衝突を防止する。ActionBarは高さ54pxの共通bottom navigationとsafe-area上部に常時配置する。操作対象は44px以上とする。
+リソースホバーモニター（ResourceHoverMonitor.tsx）は、640px以上で資源チップへのホバー時に幅250pxのリソース詳細カード（hover型、`HeaderDropdown` の `hoverBridge` 付き）を、640px未満でVRAMピル（幅96px）のタップ時に幅240pxのリソース詳細オーバーレイ（click型）を表示する。いずれのパネルも `HeaderDropdown`（§4-4-1）でbodyへportalし、fixedでヘッダー下端＋6pxに配置する。重なり順は `--z-header-menu`（60）により、ボトムナビ（50）より前面・共通Modal（100）より背面とし、ヘッダータイトルの隠蔽やモーダルとの衝突を防止する。ActionBarは高さ54pxの共通bottom navigationとsafe-area上部に常時配置する。操作対象は44px以上とする。デスクトップのホバーカードは内容を `role=group`（`aria-label="リソース詳細"`）で包み、ツールチップ用の role は付与しない。両パネルの末尾には「ComfyUI メモリ解放」ボタン群（`data-testid="resource-free-memory"`）を置く（REQ-412）。このメモリ解放操作の有効条件・理由文言・送信経路は [SPEC_SETTINGS.md のsystemタブ（§3）](SPEC_SETTINGS.md#3-レイアウトと状態5タブ) のComfyUI行（「ComfyUIのメモリ解放」）と共通である。
 
 ### 3-9. 提供機能
 

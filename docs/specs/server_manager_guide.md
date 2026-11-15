@@ -125,7 +125,7 @@ LAN 内のPCやスマートフォンから通常の生成アプリを使う場�
    - リアルタイム稼働状況（5秒間隔自動更新、LISTEN/BUNDLED/STOPPEDバッジ）
    - 全体起動・停止・再起動ボタン
    - 各サービス（ComfyUI, Backend, Frontend）ごとの個別起動・停止・再起動
-   - ComfyUI行の「メモリ解放」要求。LISTENかつqueueが既知のidle（running/pendingがともに0）で、他操作中・要求中でない場合だけ有効です。理由と結果は行内に表示されます。Managerはプロセス全体のaction lockを保持し、直前にqueueをキャッシュなしで再確認します。複数ブラウザータブ間もManager側lockで直列化し、競合要求は未送信拒否します。
+   - ComfyUI行の「メモリ解放」要求。LISTENかつqueueが既知のidle（running/pendingがともに0）で、他操作中・要求中でない場合だけ有効です。理由と結果は行内に表示されます。メインアプリの共通ヘッダーのリソース詳細パネルからも同じ条件・同じAPIで要求できます（REQ-412）。Managerはプロセス全体のaction lockを保持し、直前にqueueをキャッシュなしで再確認します。複数ブラウザータブ間もManager側lockで直列化し、競合要求は未送信拒否します。
    - 連打防止ロック：アクション実行中は画面上の全操作ボタンが一時的に無効化（disabled）され、二重送信やレースコンディションを防止
    - 同一 LAN 内アクセス：ヘッダー部に `LAN: http://<LAN-IP>:8899` バッジを表示。`tools/server-manager/allow_firewall_8899.bat` を実行（管理者権限）して Windows Defender ファイアウォールを開放することで、LAN 内の他端末（スマホやタブレット）からブラウザで一元管理可能
    - `config.json` のオンライン閲覧・編集・即時保存
@@ -137,7 +137,7 @@ LAN 内のPCやスマートフォンから通常の生成アプリを使う場�
 
 #### ComfyUIのメモリ解放要求
 
-Settingsのsystem欄とWeb Manager DashboardにはComfyUI向け「メモリ解放」操作があります。SettingsとDashboardは同じManager APIへ次のJSONをPOSTします。停止・生成中・queue待機中・状態不明・別のManager操作中は操作できません。
+Settingsのsystem欄、メインアプリ共通ヘッダーのリソース詳細パネル（REQ-412。デスクトップのホバーカードと、640px未満のVRAMピル展開パネルの末尾にある「ComfyUI メモリ解放」）、およびWeb Manager DashboardにはComfyUI向け「メモリ解放」操作があります。Settings、共通ヘッダー、Dashboardは同じManager APIへ次のJSONをPOSTします（操作元が増えてもAPI・payload・Manager側lockは変わりません）。停止・生成中・queue待機中・状態不明・別のManager操作中は操作できません。
 
 ```http
 POST http://<現在のホスト名>:8899/api/action

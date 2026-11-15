@@ -12,6 +12,53 @@ const MONITOR = '[data-testid="resource-hover-monitor"]';
 const CARD = '[data-testid="resource-hover-card"]';
 const BRIDGE = '[data-testid="resource-hover-card-bridge"]';
 const PANEL = '[data-header-menu-panel]';
+const FREE_BTN = '[data-testid="resource-free-memory-button"]';
+
+const MANAGER_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+}
+const MANAGER_IDLE = {
+  fe: { running: true, status: 'running' },
+  be: { running: true, status: 'running' },
+  comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 0 },
+  action_in_progress: null,
+}
+const FREE_ACCEPTED = { status: 'ok', action: 'free-memory', outcome: 'accepted' }
+interface ManagerStub {
+  posts: number
+  release: () => void
+}
+interface ManagerOptions {
+  status?: unknown
+  post?: 'ok' | '504' | 'abort' | 'hold'
+  postDelayMs?: number
+}
+
+/** Registered after stubApi so it wins for the Manager origin (port 8899). Counts free-memory POSTs. status 'abort' drops the connection. */
+async function stubManager(page: Page, o: ManagerOptions = {}): Promise<ManagerStub> {
+  let open!: () => void
+  const gate = new Promise<void>((resolve) => { open = resolve })
+  const state: ManagerStub = { posts: 0, release: () => open() }
+  await page.route((url) => url.port === '8899', async (route) => {
+    const req = route.request()
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: MANAGER_CORS })
+    const json = (status: number, body: unknown) =>
+      route.fulfill({ status, headers: MANAGER_CORS, contentType: 'application/json', body: JSON.stringify(body) })
+    if (req.method() === 'POST') {
+      state.posts += 1
+      const mode = o.post ?? 'ok'
+      if (mode === 'abort') return route.abort('failed')
+      if (mode === 'hold') await gate
+      if (o.postDelayMs) await new Promise((r) => setTimeout(r, o.postDelayMs))
+      return mode === '504' ? json(504, {}) : json(200, FREE_ACCEPTED)
+    }
+    if (o.status === 'abort') return route.abort('failed')
+    return json(200, o.status ?? MANAGER_IDLE)
+  })
+  return state
+}
 
 async function stubApi(page: Page): Promise<void> {
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
@@ -26,11 +73,13 @@ async function stubApi(page: Page): Promise<void> {
   });
 }
 
-async function openSettings(page: Page, w: number, h: number): Promise<void> {
+async function openSettings(page: Page, w: number, h: number, manager?: ManagerOptions, hash = 'workflows'): Promise<ManagerStub> {
   await stubApi(page);
+  const stub = await stubManager(page, manager);
   await page.setViewportSize({ width: w, height: h });
-  await page.goto('/settings#workflows');
+  await page.goto(`/settings#${hash}`);
   await expect(page.locator('h1').filter({ hasText: 'Settings' })).toBeVisible();
+  return stub;
 }
 
 async function box(loc: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -162,7 +211,8 @@ for (const v of VIEWPORTS) {
     await hoverMonitor(page);
     const card = page.locator(CARD);
     await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute('role', 'tooltip');
+    expect(await card.evaluate((n) => n.hasAttribute('role'))).toBe(false);
+    await expect(card.locator(':scope > [role="group"][aria-label="リソース詳細"]')).toHaveCount(1);
     const c = await box(card);
     const vp = page.viewportSize();
     if (!vp) throw new Error('no viewport');
@@ -173,6 +223,26 @@ for (const v of VIEWPORTS) {
     expect(corner.ok, `corner hit: ${corner.hit}`).toBe(true);
     const center = await pointInside(card, c.width / 2, c.height / 2);
     expect(center.ok, `center hit: ${center.hit}`).toBe(true);
+  });
+
+  test(`[REQ-412/AC-1] the real pointer moves from the monitor through the bridge to the free-memory button and it is pressable ${tag}`, async ({ page }) => {
+    const manager = await openSettings(page, v.w, v.h);
+    await hoverMonitor(page);
+    const card = page.locator(CARD);
+    await expect(card).toBeVisible();
+    const button = page.locator(FREE_BTN);
+    await expect(button).toBeEnabled();
+    const m = await box(page.locator(MONITOR));
+    const b = await box(button);
+    await page.mouse.move(m.x + m.width / 2, m.y + m.height - 2);
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 20 });
+    await expect(card).toBeVisible();
+    const hit = await pointInside(button, b.width / 2, b.height / 2);
+    expect(hit.ok, `button hit: ${hit.hit}`).toBe(true);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect.poll(() => manager.posts).toBe(1);
+    await expect(card).toBeVisible();
   });
 }
 
@@ -265,4 +335,107 @@ test('[REQ-346/AC-4] opening the header menu while the A4 card is open leaves on
   await expect(page.locator(CARD)).toBeVisible();
   await page.getByTestId('header-kebab-menu-button').click();
   await expect(page.locator(PANEL)).toHaveCount(1);
+});
+
+const ACCEPTED_TEXT = '解放要求を受け付けました。空き容量は監視値で確認してください';
+
+test('[REQ-412/AC-3][REQ-412/AC-4] idle request is sent once, the button is busy until confirmation, and acceptance wording is shown @1280x800', async ({ page }) => {
+  const manager = await openSettings(page, 1280, 800, { post: 'ok', postDelayMs: 800 });
+  await hoverMonitor(page);
+  const button = page.locator(FREE_BTN);
+  await expect(button).toBeEnabled();
+  await button.dblclick();
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByTestId('resource-free-memory-status')).toHaveText(ACCEPTED_TEXT);
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveAttribute('aria-busy', 'false');
+  await expect(page.getByTestId('resource-free-memory-status')).not.toHaveText(/完了|解放しました/);
+  expect(manager.posts).toBe(1);
+});
+
+test('[REQ-412/AC-5] executing, queued and unreachable Manager disable the button with a reason @1280x800', async ({ page }) => {
+  const cases = [
+    { status: { ...MANAGER_IDLE, comfy: { running: true, status: 'LISTEN', execution_state: 'executing', queue_running: 1, queue_pending: 0 } }, reason: 'ComfyUIで生成中です。' },
+    { status: { ...MANAGER_IDLE, comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 2 } }, reason: 'ComfyUIのキューが空ではありません。' },
+    { status: 'abort' as const, reason: 'Manager状態を確認できません。' },
+  ];
+  for (const c of cases) {
+    const manager = await openSettings(page, 1280, 800, { status: c.status });
+    await hoverMonitor(page);
+    await expect(page.locator(FREE_BTN)).toBeDisabled();
+    await expect(page.getByTestId('resource-free-memory-reason')).toHaveText(c.reason);
+    await page.locator(FREE_BTN).click({ force: true });
+    expect(manager.posts).toBe(0);
+  }
+});
+
+test('[REQ-412/AC-6] HTTP 504 and a dropped connection show 要求結果未確認 without resending @1280x800', async ({ page }) => {
+  for (const post of ['504', 'abort'] as const) {
+    const manager = await openSettings(page, 1280, 800, { post });
+    await hoverMonitor(page);
+    const button = page.locator(FREE_BTN);
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect(page.getByTestId('resource-free-memory-status')).toContainText('要求結果未確認');
+    await expect(button).toBeEnabled();
+    await page.waitForTimeout(500);
+    expect(manager.posts, `POST count for ${post}`).toBe(1);
+  }
+});
+
+test('[REQ-412/AC-7] on a short viewport the card scrolls internally and the free-memory button is reachable at header + 6px @1024x768', async ({ page }) => {
+  await openSettings(page, 1024, 768);
+  const hb = await headerBottom(page);
+  const H = Math.ceil(hb + 6 + 200 + 8);
+  await page.setViewportSize({ width: 1024, height: H });
+  await hoverMonitor(page);
+  const card = page.locator(CARD);
+  await expect(card).toBeVisible();
+  const c = await box(card);
+  expect(Math.abs(c.y - (hb + 6)), `card y=${c.y} header bottom=${hb}`).toBeLessThanOrEqual(1);
+  const m = await cardMetrics(card);
+  expect(m.scrollH, `scrollHeight vs clientHeight at H=${H}`).toBeGreaterThan(m.clientH);
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
+  await card.evaluate((n) => { (n as HTMLElement).scrollTop = (n as HTMLElement).scrollHeight; });
+  await expect(card).toBeVisible();
+  const button = page.locator(FREE_BTN);
+  const b = await box(button);
+  expect(b.y).toBeGreaterThanOrEqual(c.y);
+  expect(b.y + b.height).toBeLessThanOrEqual(Math.min(c.y + c.height, H));
+  const hit = await pointInside(button, b.width / 2, b.height / 2);
+  expect(hit.ok, `button hit: ${hit.hit}`).toBe(true);
+  await button.click({ trial: true });
+});
+
+test('[REQ-412/AC-1] leaving the card from the disabled button closes the card @1280x800', async ({ page }) => {
+  const manager = await openSettings(page, 1280, 800, { status: 'abort' });
+  await hoverMonitor(page);
+  const card = page.locator(CARD);
+  await expect(card).toBeVisible();
+  const button = page.locator(FREE_BTN);
+  await expect(button).toBeDisabled();
+  const b = await box(button);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 10 });
+  await expect(card).toBeVisible();
+  await leave(page);
+  await expect(card).toBeHidden();
+  expect(manager.posts).toBe(0);
+});
+
+test('[REQ-412/AC-3] a header request while Settings is already sending is not sent twice @1280x800', async ({ page }) => {
+  const manager = await openSettings(page, 1280, 800, { post: 'hold' }, 'system');
+  const settingsButton = page.getByRole('button', { name: 'ComfyUIのメモリ解放' });
+  await expect(settingsButton).toBeEnabled();
+  await settingsButton.click();
+  await expect.poll(() => manager.posts).toBe(1);
+  await hoverMonitor(page);
+  const headerButton = page.locator(FREE_BTN);
+  await expect(headerButton).toBeDisabled();
+  await headerButton.click({ force: true });
+  expect(manager.posts).toBe(1);
+  manager.release();
+  await expect(page.getByTestId('resource-free-memory-status')).toHaveText(ACCEPTED_TEXT);
+  await expect(headerButton).toBeEnabled();
+  expect(manager.posts).toBe(1);
 });

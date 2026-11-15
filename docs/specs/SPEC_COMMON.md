@@ -445,8 +445,8 @@ interface TagChipEventDetail {
 |---|---|---|
 | 適用 | ワークフロー設定（`#workflow-actions-btn`、Generate Desktop／Mobile） | `pages/GeneratePage/components/WorkflowActionsMenu.tsx` |
 | 適用 | ヘッダーメニュー（キャッシュ／ストレージ、`#header-kebab-btn`、全ページ） | `components/common/header/HeaderKebabMenu.tsx` |
-| 適用 | モバイル VRAM ピル展開（640px 未満。640px 以上へ拡大すると閉じる） | `components/common/header/ResourceHoverMonitor.tsx` |
-| 適用（hover 型） | デスクトップ資源ホバーカード（640px 以上、`role=tooltip`、`data-testid="resource-hover-card"`） | 同上（A3 と同一ファイル。ブリッジ `resource-hover-card-bridge`（`HeaderDropdown` が描画）を含む） |
+| 適用 | モバイル VRAM ピル展開（640px 未満。640px 以上へ拡大すると閉じる。展開パネルの末尾に「ComfyUI メモリ解放」ボタン群 `data-testid="resource-free-memory"` を置く（REQ-412）） | `components/common/header/ResourceHoverMonitor.tsx`（ボタン群は `components/common/header/HeaderFreeMemoryAction.tsx`） |
+| 適用（hover 型） | デスクトップ資源ホバーカード（640px 以上、`data-testid="resource-hover-card"`。カードにはツールチップ用の role を付与せず、内容を `role=group`（`aria-label="リソース詳細"`）で包む（REQ-412）。末尾に「ComfyUI メモリ解放」ボタン群 `data-testid="resource-free-memory"` を置く） | 同上（A3 と同一ファイル。ブリッジ `resource-hover-card-bridge`（`HeaderDropdown` が描画）を含む） |
 
 検証幅（既存サポート範囲）: mobile 375／639／767、tablet 768／1023、desktop 1024／1280。短い高さ 360 でメニュー内スクロールを確認する。hover 型（640px 以上のみ表示）は 640／768／1024／1280 で確認する。全アクションで、開いたパネルの上端がヘッダー下端＋6px であることを確認する。開いたままの resize は同一レイアウト内（Desktop 内・Mobile 内）で確認し、レイアウト境界を跨ぐ場合は「閉じる→開き直して最後の項目に到達・押下できる」ことを確認する。
 

@@ -13,6 +13,52 @@ const VIEWPORTS = [
 ]
 const SHORT_H = 360
 const ANCHOR_GAP = 6 // R1: panel top = page header bottom + 6px (±1px)
+const FREE_BTN = '[data-testid="resource-free-memory-button"]'
+const MANAGER_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+}
+const MANAGER_IDLE = {
+  fe: { running: true, status: 'running' },
+  be: { running: true, status: 'running' },
+  comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 0 },
+  action_in_progress: null,
+}
+const FREE_ACCEPTED = { status: 'ok', action: 'free-memory', outcome: 'accepted' }
+interface ManagerStub {
+  posts: number
+  release: () => void
+}
+interface ManagerOptions {
+  status?: unknown
+  post?: 'ok' | '504' | 'abort' | 'hold'
+  postDelayMs?: number
+}
+
+/** Registered after stubApi so it wins for the Manager origin (port 8899). Counts free-memory POSTs. status 'abort' drops the connection. */
+async function stubManager(page: Page, o: ManagerOptions = {}): Promise<ManagerStub> {
+  let open!: () => void
+  const gate = new Promise<void>((resolve) => { open = resolve })
+  const state: ManagerStub = { posts: 0, release: () => open() }
+  await page.route((url) => url.port === '8899', async (route) => {
+    const req = route.request()
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: MANAGER_CORS })
+    const json = (status: number, body: unknown) =>
+      route.fulfill({ status, headers: MANAGER_CORS, contentType: 'application/json', body: JSON.stringify(body) })
+    if (req.method() === 'POST') {
+      state.posts += 1
+      const mode = o.post ?? 'ok'
+      if (mode === 'abort') return route.abort('failed')
+      if (mode === 'hold') await gate
+      if (o.postDelayMs) await new Promise((r) => setTimeout(r, o.postDelayMs))
+      return mode === '504' ? json(504, {}) : json(200, FREE_ACCEPTED)
+    }
+    if (o.status === 'abort') return route.abort('failed')
+    return json(200, o.status ?? MANAGER_IDLE)
+  })
+  return state
+}
 type Action = (typeof ACTIONS)[number]
 
 async function stubApi(page: Page): Promise<void> {
@@ -26,11 +72,13 @@ async function box(loc: Locator) {
 }
 /** Bottom edge of the real page header (the contract marker `data-page-header-root`). */
 const headerBottom = async (page: Page) => (await box(page.locator('[data-page-header-root]').first())).bottom
-async function openHarness(page: Page, w: number, h: number): Promise<void> {
+async function openHarness(page: Page, w: number, h: number, manager?: ManagerOptions): Promise<ManagerStub> {
   await stubApi(page)
+  const stub = await stubManager(page, manager)
   await page.setViewportSize({ width: w, height: h })
   await page.goto(HARNESS)
   await expect(page.getByTestId('harness-header')).toBeVisible()
+  return stub
 }
 async function openAction(page: Page, a: Action): Promise<void> {
   await page.locator(a.trigger).first().click()
@@ -246,3 +294,28 @@ for (const w of [639, 640, 768, 1024, 1280]) {
     expect(await inside(page, '[data-testid="resource-hover-card"]', c.x + c.width / 2, c.y + c.height / 2)).toBe(true)
   })
 }
+
+// REQ-412: ComfyUI free-memory action inside the mobile resource overlay (real header in the harness).
+for (const w of [375, 639]) {
+  test(`[REQ-412/AC-2] tapping the VRAM pill shows the free-memory button and a tap sends one request @${w}x667`, async ({ page }) => {
+    const manager = await openHarness(page, w, 667)
+    await page.locator('[data-testid="mobile-vram-pill"]').click()
+    const overlay = page.getByTestId('mobile-resource-overlay')
+    await expect(overlay).toBeVisible()
+    const button = overlay.locator(FREE_BTN)
+    await expect(button).toBeEnabled()
+    await button.click()
+    await expect.poll(() => manager.posts).toBe(1)
+    await expect(page.getByTestId('resource-free-memory-status')).toHaveText('解放要求を受け付けました。空き容量は監視値で確認してください')
+    expect(manager.posts).toBe(1)
+  })
+}
+
+test('[REQ-412/AC-7] the free-memory section is the last item of the mobile overlay and is reachable on a 360px-high viewport', async ({ page }) => {
+  const pill = ACTIONS[2]
+  await openHarness(page, 375, SHORT_H)
+  await openAction(page, pill)
+  expect(await page.locator(pill.panel).evaluate((el) => (el.lastElementChild as HTMLElement | null)?.getAttribute('data-testid'))).toBe('resource-free-memory')
+  await expect.poll(() => anchoredBelowHeader(page, pill)).toBe(true)
+  await reachLast(page, { ...pill, last: FREE_BTN })
+})

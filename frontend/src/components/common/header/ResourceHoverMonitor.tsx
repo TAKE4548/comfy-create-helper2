@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { HeaderDropdown } from './HeaderDropdown'
+import { HeaderFreeMemoryAction } from './HeaderFreeMemoryAction'
 
 function chipColor(pct: number | null, isVram = false): string {
   if (pct === null) return 'text-zinc-500 border-zinc-800'
@@ -86,11 +87,11 @@ export function ResourceHoverMonitor(): React.JSX.Element {
         onClose={() => setIsHovered(false)}
         anchorRef={monitorRef}
         align="end"
-        role="tooltip"
         hoverBridge
         data-testid="resource-hover-card"
         className="hidden sm:block w-[250px] p-3 rounded-lg border border-zinc-800 bg-surface-1/95 backdrop-blur-md shadow-2xl text-xs text-zinc-300 pointer-events-auto"
       >
+        <div role="group" aria-label="リソース詳細">
           <div className="font-semibold text-zinc-200 mb-2 pb-1 border-b border-zinc-800 flex justify-between items-center">
             <span>リソース詳細</span>
             <span className="text-[10px] text-zinc-500 font-normal">Real-time</span>
@@ -135,6 +136,8 @@ export function ResourceHoverMonitor(): React.JSX.Element {
               <span className="text-zinc-200 font-mono">{stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
             </div>
           </div>
+          <HeaderFreeMemoryAction variant="desktop" />
+        </div>
       </HeaderDropdown>
 
       {/* Mobile Pill & Overlay */}
@@ -214,6 +217,7 @@ export function ResourceHoverMonitor(): React.JSX.Element {
                 <span className="text-zinc-200 font-mono">{stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
               </div>
             </div>
+            <HeaderFreeMemoryAction variant="mobile" />
         </HeaderDropdown>
       </div>
     </div>

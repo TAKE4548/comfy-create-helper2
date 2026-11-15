@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ServiceConnectionCard } from '../ServiceConnectionCard'
 import { configApi } from '../../../../api/client'
 import { ManagerActionOutcomeUnknownError, systemManagerApi } from '../../../../api/domains/systemManager'
+import { resetManagerOperationStoreForTests, tryBeginManagerOperation, endManagerOperation, useComfyFreeMemory } from '../../../../hooks/useComfyFreeMemory'
 import { useManagerStatus } from '../../../../hooks/useManagerStatus'
 import type { ManagerStatus } from '../../../../api/domains/systemManager'
 
@@ -12,9 +13,7 @@ vi.mock('../../../../api/client', () => ({ configApi: { get: vi.fn() } }))
 vi.mock('../../../../api/domains/systemManager', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../api/domains/systemManager')>()
   return {
-    ManagerActionOutcomeUnknownError: class ManagerActionOutcomeUnknownError extends Error {
-      readonly outcome = 'unconfirmed'
-    },
+    ManagerActionOutcomeUnknownError: actual.ManagerActionOutcomeUnknownError,
     systemManagerApi: { status: vi.fn(), action: vi.fn(), freeMemory: vi.fn(), logs: vi.fn() },
     __realSystemManagerApi: actual.systemManagerApi,
   }
@@ -48,10 +47,42 @@ function setup(managerStatus: ManagerStatus | null = readyStatus, available = tr
   return { refetch, client, rerender: rendered.rerender }
 }
 
+let abortSpy: ReturnType<typeof vi.spyOn> | null = null
+
 afterEach(() => {
   vi.useRealTimers()
   vi.clearAllMocks()
+  resetManagerOperationStoreForTests()
+  abortSpy?.mockRestore()
+  abortSpy = null
+  vi.unstubAllGlobals()
 })
+
+const idleStatusPayload = {
+  fe: { running: true, status: 'running' }, be: { running: true, status: 'running' },
+  comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 0 },
+  action_in_progress: null,
+}
+
+// Real systemManagerApi + real useManagerStatus + shared store; only fetch is replaced.
+async function setupRealImplementations(onPost: () => Promise<Response>) {
+  const realApi = (await vi.importActual<typeof import('../../../../api/domains/systemManager')>('../../../../api/domains/systemManager')).systemManagerApi
+  const realUse = (await vi.importActual<typeof import('../../../../hooks/useManagerStatus')>('../../../../hooks/useManagerStatus')).useManagerStatus
+  abortSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => new AbortController().signal)
+  const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === 'POST' ? onPost() : Promise.resolve(jsonResponse(idleStatusPayload)))
+  vi.stubGlobal('fetch', fetchMock)
+  mockedManager.mockImplementation(realUse)
+  vi.mocked(systemManagerApi.status).mockImplementation(realApi.status)
+  mockedFreeMemory.mockImplementation(realApi.freeMemory)
+  mockedConfig.mockResolvedValue({ comfy_url: 'http://comfy-config:8188' } as Awaited<ReturnType<typeof configApi.get>>)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><ServiceConnectionCard /></QueryClientProvider>)
+  const button = await screen.findByRole('button', { name: 'ComfyUIのメモリ解放' })
+  await waitFor(() => expect(button).toBeEnabled())
+  const posts = (): number => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').length
+  return { button, posts }
+}
 
 describe('ServiceConnectionCard', () => {
   it('[REQ-381/AC-11] wraps service status before its accessible 44px log action while keeping the desktop row', () => {
@@ -320,5 +351,50 @@ describe('ServiceConnectionCard', () => {
     expect(screen.queryByRole('status', { name: /実行中/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'ComfyUIを起動' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Backendを再起動' })).toBeEnabled()
+  })
+
+  it('[REQ-412/AC-3] Settings free-memory uses the shared lock so a concurrent header request is not sent', async () => {
+    let resolvePost!: (response: Response) => void
+    const { button, posts } = await setupRealImplementations(() => new Promise<Response>((resolve) => { resolvePost = resolve }))
+    const header = renderHook(() => useComfyFreeMemory())
+    await waitFor(() => expect(header.result.current.enabled).toBe(true))
+
+    fireEvent.click(button)
+    await waitFor(() => expect(posts()).toBe(1))
+    expect(button).toBeDisabled()
+    await waitFor(() => expect(header.result.current.enabled).toBe(false))
+    let headerResult: unknown = 'unset'
+    await act(async () => { headerResult = await header.result.current.run() })
+    expect(headerResult).toBeNull()
+    expect(posts()).toBe(1)
+
+    await act(async () => { resolvePost(jsonResponse({ status: 'ok', action: 'free-memory', outcome: 'accepted' })) })
+    expect(await screen.findByText('解放要求を受け付けました。空き容量は監視値で確認してください')).toBeInTheDocument()
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(posts()).toBe(1)
+  })
+
+  it('[REQ-412/AC-5] Settings controls and free-memory are disabled while another tab-local operation holds the lock', async () => {
+    const { button, posts } = await setupRealImplementations(() => Promise.resolve(jsonResponse({ status: 'ok', action: 'free-memory', outcome: 'accepted' })))
+    act(() => { expect(tryBeginManagerOperation('backend:restart')).toBe(true) })
+    for (const name of ['ComfyUIを起動', 'ComfyUIを停止', 'ComfyUIを再起動', 'Backendを再起動', 'ComfyUIのメモリ解放']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled()
+    }
+    expect(screen.getByText('別のサービス操作中です。')).toBeInTheDocument()
+    fireEvent.click(button)
+    expect(posts()).toBe(0)
+
+    act(() => { endManagerOperation('backend:restart') })
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'ComfyUIを起動' })).toBeEnabled()
+  })
+
+  it('[REQ-412/AC-6] Settings shows the unconfirmed message prefixed with 要求結果未確認', async () => {
+    const { button, posts } = await setupRealImplementations(() => Promise.resolve({ ok: false, status: 504, json: async () => ({}) } as Response))
+    fireEvent.click(button)
+    expect(await screen.findByText(/^要求結果未確認: 解放要求の結果を確認できません。状態を再取得します。操作は再送しません。$/)).toBeInTheDocument()
+    expect(posts()).toBe(1)
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(screen.queryByText(/解放要求を受け付けました/)).toBeNull()
   })
 })
