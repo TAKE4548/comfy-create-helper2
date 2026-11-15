@@ -302,6 +302,330 @@ test.describe('Mobile Generate Gallery, Bottom Sheet, Fullscreen Viewer & PC Non
     })
   })
 
+  test.describe('Mobile Carousel & Swipe Gestures (375x812)', () => {
+    test.use({ viewport: { width: 375, height: 812 } })
+
+    async function dispatchSwipe(
+      locator: ReturnType<Page['locator']>,
+      opts: {
+        startX: number
+        startY: number
+        points: Array<{ x: number; y: number; delayMs?: number }>
+        release?: boolean
+      }
+    ) {
+      await locator.evaluate(async (el, { startX, startY, points, release }) => {
+        const makeTouch = (x: number, y: number) =>
+          new Touch({
+            identifier: 1,
+            target: el,
+            clientX: x,
+            clientY: y,
+            pageX: x,
+            pageY: y,
+          })
+
+        const t0 = makeTouch(startX, startY)
+        el.dispatchEvent(
+          new TouchEvent('touchstart', {
+            bubbles: true,
+            cancelable: true,
+            touches: [t0],
+            targetTouches: [t0],
+            changedTouches: [t0],
+          })
+        )
+
+        let lastX = startX
+        let lastY = startY
+        for (const pt of points) {
+          if (pt.delayMs && pt.delayMs > 0) {
+            await new Promise((r) => setTimeout(r, pt.delayMs))
+          }
+          lastX = pt.x
+          lastY = pt.y
+          const tm = makeTouch(pt.x, pt.y)
+          el.dispatchEvent(
+            new TouchEvent('touchmove', {
+              bubbles: true,
+              cancelable: true,
+              touches: [tm],
+              targetTouches: [tm],
+              changedTouches: [tm],
+            })
+          )
+        }
+
+        if (release !== false) {
+          const te = makeTouch(lastX, lastY)
+          el.dispatchEvent(
+            new TouchEvent('touchend', {
+              bubbles: true,
+              cancelable: true,
+              touches: [],
+              targetTouches: [],
+              changedTouches: [te],
+            })
+          )
+        }
+      }, opts)
+    }
+
+    test('[REQ-431/AC-1] Mobile 375x812: 3-image carousel follows finger translateX and snaps back below threshold', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+      await page.locator('#thumb-mobile-0').click()
+
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      const track = sheetContent.locator('[data-testid="mobile-image-carousel-track"]')
+      await expect(track).toBeVisible()
+
+      const initialSrc = await sheetContent.locator('img[alt="プレビュー画像"]').getAttribute('src')
+
+      // Drag left by 20px (below SWIPE_HORIZONTAL_THRESHOLD=40) without releasing yet
+      await dispatchSwipe(sheetContent, {
+        startX: 250,
+        startY: 300,
+        points: [
+          { x: 240, y: 300, delayMs: 80 },
+          { x: 230, y: 300, delayMs: 80 },
+        ],
+        release: false,
+      })
+
+      const draggingTransform = await track.evaluate((el) => el.style.transform)
+      expect(draggingTransform).toBe('translateX(calc(0% - 20px))')
+
+      // Release slowly so flick velocity threshold is not met -> snaps back to 0px, same image
+      await sheetContent.evaluate(async (el) => {
+        await new Promise((r) => setTimeout(r, 120))
+        const t = new Touch({
+          identifier: 1,
+          target: el,
+          clientX: 230,
+          clientY: 300,
+          pageX: 230,
+          pageY: 300,
+        })
+        el.dispatchEvent(
+          new TouchEvent('touchend', {
+            bubbles: true,
+            cancelable: true,
+            touches: [],
+            targetTouches: [],
+            changedTouches: [t],
+          })
+        )
+      })
+
+      await expect.poll(() => track.evaluate((el) => el.style.transform)).toBe('translateX(calc(0% + 0px))')
+      await expect(sheetContent.locator('img[alt="プレビュー画像"]')).toHaveAttribute('src', initialSrc!)
+    })
+
+    test('[REQ-431/AC-2][REQ-431/AC-3] Mobile 375x812: left/right swipe switches images and syncs download href', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+      await page.locator('#thumb-mobile-0').click()
+
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      const previewImg = sheetContent.locator('img[alt="プレビュー画像"]')
+      const downloadBtn = sheetContent.locator('#download-btn-mobile')
+
+      const firstSrc = await previewImg.getAttribute('src')
+      expect(firstSrc).toBeTruthy()
+      await expect(downloadBtn).toHaveAttribute('href', firstSrc!)
+
+      // Swipe left -> move to next image
+      await dispatchSwipe(sheetContent, {
+        startX: 280,
+        startY: 300,
+        points: [
+          { x: 240, y: 300, delayMs: 16 },
+          { x: 160, y: 300, delayMs: 16 },
+        ],
+      })
+
+      await expect.poll(() => previewImg.getAttribute('src')).not.toBe(firstSrc)
+      const secondSrc = await previewImg.getAttribute('src')
+      await expect(downloadBtn).toHaveAttribute('href', secondSrc!)
+
+      // Swipe right -> move back to first image
+      await dispatchSwipe(sheetContent, {
+        startX: 120,
+        startY: 300,
+        points: [
+          { x: 180, y: 300, delayMs: 16 },
+          { x: 260, y: 300, delayMs: 16 },
+        ],
+      })
+
+      await expect(previewImg).toHaveAttribute('src', firstSrc!)
+      await expect(downloadBtn).toHaveAttribute('href', firstSrc!)
+    })
+
+    test('[REQ-431/AC-4] Mobile 375x812: fullscreen viewer supports horizontal swipe and preserves image on exit', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+      await page.locator('#thumb-mobile-0').click()
+
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      const firstSrc = await sheetContent.locator('img[alt="プレビュー画像"]').getAttribute('src')
+      await sheetContent.locator('img[alt="プレビュー画像"]').click()
+
+      const viewer = page.locator('[data-testid="mobile-fullscreen-viewer"]')
+      await expect(viewer).toBeVisible()
+      const fullImg = viewer.locator('img[alt="全画面画像"]')
+      await expect(fullImg).toHaveAttribute('src', firstSrc!)
+
+      // Swipe left inside fullscreen viewer
+      await dispatchSwipe(viewer, {
+        startX: 280,
+        startY: 400,
+        points: [
+          { x: 220, y: 400, delayMs: 16 },
+          { x: 140, y: 400, delayMs: 16 },
+        ],
+      })
+
+      await expect.poll(() => fullImg.getAttribute('src')).not.toBe(firstSrc)
+      const secondSrc = await fullImg.getAttribute('src')
+
+      // Exit fullscreen -> bottom sheet shows the swiped image
+      await page.locator('[data-testid="mobile-fullscreen-close-btn"]').click()
+      await expect(viewer).not.toBeVisible()
+      await expect(sheetContent.locator('img[alt="プレビュー画像"]')).toHaveAttribute('src', secondSrc!)
+    })
+
+    test('[REQ-431/AC-5] Mobile 375x812: swipe-down closes sheet preserving scroll, and is disabled in fullscreen', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+
+      // Scroll main container before opening sheet
+      const mainContainer = page.locator('main')
+      const scrollBefore = await mainContainer.evaluate((el) => {
+        el.scrollTop = 120
+        return el.scrollTop
+      })
+
+      await page.locator('#thumb-mobile-0').click()
+      const sheet = page.locator('[data-testid="mobile-image-sheet"]')
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      await expect(sheet).toBeVisible()
+
+      // Enter fullscreen and verify swipe-down does NOT close fullscreen
+      await sheetContent.locator('img[alt="プレビュー画像"]').click()
+      const viewer = page.locator('[data-testid="mobile-fullscreen-viewer"]')
+      await expect(viewer).toBeVisible()
+
+      await dispatchSwipe(viewer, {
+        startX: 180,
+        startY: 200,
+        points: [
+          { x: 180, y: 260, delayMs: 16 },
+          { x: 180, y: 360, delayMs: 16 },
+        ],
+      })
+      await expect(viewer).toBeVisible()
+
+      // Exit fullscreen back to sheet, then swipe-down to close sheet
+      await page.locator('[data-testid="mobile-fullscreen-close-btn"]').click()
+      await expect(viewer).not.toBeVisible()
+
+      await dispatchSwipe(sheetContent, {
+        startX: 180,
+        startY: 200,
+        points: [
+          { x: 180, y: 260, delayMs: 16 },
+          { x: 180, y: 360, delayMs: 16 },
+        ],
+      })
+
+      await expect(sheet).not.toBeVisible()
+      const scrollAfter = await mainContainer.evaluate((el) => el.scrollTop)
+      expect(scrollAfter).toBe(scrollBefore)
+    })
+
+    test('[REQ-431/AC-6] Mobile 375x812: gesture direction lock isolates horizontal vs vertical swipes', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+      await page.locator('#thumb-mobile-0').click()
+
+      const sheet = page.locator('[data-testid="mobile-image-sheet"]')
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      const track = sheetContent.locator('[data-testid="mobile-image-carousel-track"]')
+      const initialSrc = await sheetContent.locator('img[alt="プレビュー画像"]').getAttribute('src')
+
+      // 1. Lock horizontal first (deltaX = -18px, below threshold/flick), then move vertically -> sheet must NOT close or switch image
+      await dispatchSwipe(sheetContent, {
+        startX: 250,
+        startY: 250,
+        points: [
+          { x: 232, y: 250, delayMs: 80 },
+          { x: 232, y: 400, delayMs: 80 },
+        ],
+      })
+      await expect(sheet).toBeVisible()
+
+      // 2. Lock vertical first, then move horizontally -> image must NOT switch
+      await dispatchSwipe(sheetContent, {
+        startX: 250,
+        startY: 250,
+        points: [
+          { x: 250, y: 280, delayMs: 16 },
+          { x: 130, y: 280, delayMs: 16 },
+        ],
+      })
+      await expect(sheet).toBeVisible()
+      await expect(track.locator('img[alt="プレビュー画像"]')).toHaveAttribute('src', initialSrc!)
+    })
+
+    test('[REQ-431/AC-7] Mobile 375x812: closing sheet after swipe syncs 3-column history grid selection', async ({
+      page,
+    }) => {
+      await openGenerate(page, 375, 812)
+      await page.locator('button[aria-controls="mobile-history-panel"]').click()
+
+      const thumb0 = page.locator('#thumb-mobile-0')
+      const thumb1 = page.locator('#thumb-mobile-1')
+      await thumb0.click()
+
+      const sheet = page.locator('[data-testid="mobile-image-sheet"]')
+      const sheetContent = page.locator('[data-testid="mobile-image-sheet-content"]')
+      await expect(sheet).toBeVisible()
+      const previewImg = sheetContent.locator('img[alt="プレビュー画像"]')
+      const firstSrc = await previewImg.getAttribute('src')
+
+      // Swipe left to second image
+      await dispatchSwipe(sheetContent, {
+        startX: 280,
+        startY: 300,
+        points: [
+          { x: 220, y: 300, delayMs: 16 },
+          { x: 140, y: 300, delayMs: 16 },
+        ],
+      })
+      await expect.poll(() => previewImg.getAttribute('src')).not.toBe(firstSrc)
+
+      // Close sheet
+      await page.locator('[data-testid="mobile-sheet-close-btn"]').click()
+      await expect(sheet).not.toBeVisible()
+
+      // Grid selection highlight moves to thumb-mobile-1
+      await expect(thumb1).toHaveClass(/border-accent-green/)
+      await expect(thumb0).not.toHaveClass(/border-accent-green/)
+    })
+  })
+
   test.describe('Desktop Viewport (1280x800)', () => {
     test.use({ viewport: { width: 1280, height: 800 } })
 

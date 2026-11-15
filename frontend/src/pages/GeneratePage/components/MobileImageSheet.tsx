@@ -1,11 +1,36 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, TouchEvent as ReactTouchEvent } from 'react'
 import { X, ImageOff, Download, Camera } from 'lucide-react'
 
 export interface MobileImageSheetProps {
   isOpen: boolean
   onClose: () => void
   image: string | null
+  images?: string[]
+  onSelectImage?: (imageUrl: string) => void
   onSaveSnapshot?: (imageUrl: string) => void
+}
+
+const DIRECTION_LOCK_SLOP = 5
+const TAP_SUPPRESS_DISTANCE = 10
+const SWIPE_HORIZONTAL_THRESHOLD = 40
+const FLICK_HORIZONTAL_VELOCITY = 0.4
+const FLICK_HORIZONTAL_MIN_DISTANCE = 20
+const EDGE_DAMPING = 0.25
+const SWIPE_DOWN_THRESHOLD = 80
+const FLICK_VELOCITY = 0.5
+const FLICK_MIN_DISTANCE = 30
+const CAROUSEL_TRANSITION = 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+
+type GestureLock = 'none' | 'horizontal' | 'vertical' | 'blocked'
+
+function isScrolledDown(target: HTMLElement | null, boundary: HTMLElement | null): boolean {
+  let el = target
+  while (el && boundary && (boundary === el || boundary.contains(el))) {
+    if (el.scrollTop > 0) return true
+    if (el === boundary) break
+    el = el.parentElement
+  }
+  return false
 }
 
 interface WakeLockSentinel {
@@ -42,20 +67,99 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
   isOpen,
   onClose,
   image,
+  images,
+  onSelectImage,
   onSaveSnapshot,
 }) => {
   const [viewMode, setViewMode] = useState<'sheet' | 'fullscreen'>('sheet')
   const [hasError, setHasError] = useState(false)
+  const [translateY, setTranslateY] = useState(0)
+  const [dragOffsetX, setDragOffsetX] = useState(0)
+  const [isDraggingSheet, setIsDraggingSheet] = useState(false)
+  const [isDraggingCarousel, setIsDraggingCarousel] = useState(false)
+
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const sheetContentRef = useRef<HTMLDivElement>(null)
+  const carouselTrackRef = useRef<HTMLDivElement>(null)
 
-  // Reset state when opening/closing or image changes
+  const startXRef = useRef<number | null>(null)
+  const startYRef = useRef<number | null>(null)
+  const startTimeRef = useRef<number>(0)
+  const gestureLockRef = useRef<GestureLock>('none')
+  const didSwipeRef = useRef(false)
+
+  // Reset viewMode and gesture state only when sheet opens/closes
+  useEffect(() => {
+    setViewMode('sheet')
+    setTranslateY(0)
+    setDragOffsetX(0)
+    setIsDraggingSheet(false)
+    setIsDraggingCarousel(false)
+    gestureLockRef.current = 'none'
+    didSwipeRef.current = false
+    startXRef.current = null
+    startYRef.current = null
+  }, [isOpen])
+
+  // Reset error state when image changes without leaving fullscreen
   useEffect(() => {
     if (isOpen) {
-      setViewMode('sheet')
       setHasError(false)
     }
   }, [isOpen, image])
+
+  // Prevent browser pull-to-refresh while sheet/viewer is open
+  useEffect(() => {
+    if (!isOpen) return
+    const html = document.documentElement
+    const body = document.body
+    const prevHtmlOverscrollY = html.style.overscrollBehaviorY
+    const prevBodyOverscrollY = body.style.overscrollBehaviorY
+    html.style.overscrollBehaviorY = 'contain'
+    body.style.overscrollBehaviorY = 'contain'
+    return () => {
+      html.style.overscrollBehaviorY = prevHtmlOverscrollY
+      body.style.overscrollBehaviorY = prevBodyOverscrollY
+    }
+  }, [isOpen])
+
+  // Native non-passive touchmove listener to prevent pull-to-refresh / page scroll during sheet/carousel gestures
+  useEffect(() => {
+    if (!isOpen || !image) return
+    const targetEl = viewMode === 'fullscreen' ? containerRef.current : sheetContentRef.current
+    if (!targetEl) return
+
+    const handleNativeTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || gestureLockRef.current === 'blocked') {
+        return
+      }
+      let lock = gestureLockRef.current
+      if (lock === 'none' && startXRef.current !== null && startYRef.current !== null) {
+        const touch = e.touches[0]
+        const deltaX = touch.clientX - startXRef.current
+        const deltaY = touch.clientY - startYRef.current
+        if (Math.abs(deltaX) > DIRECTION_LOCK_SLOP || Math.abs(deltaY) > DIRECTION_LOCK_SLOP) {
+          if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            lock = 'horizontal'
+          } else if (
+            viewMode !== 'fullscreen' &&
+            !(typeof window !== 'undefined' && window.innerWidth >= 768)
+          ) {
+            lock = 'vertical'
+          }
+        }
+      }
+      if ((lock === 'vertical' || lock === 'horizontal') && e.cancelable) {
+        e.preventDefault()
+      }
+    }
+
+    targetEl.addEventListener('touchmove', handleNativeTouchMove, { passive: false })
+    return () => {
+      targetEl.removeEventListener('touchmove', handleNativeTouchMove)
+    }
+  }, [isOpen, image, viewMode])
 
   // Screen Wake Lock acquisition
   const requestWakeLock = useCallback(async () => {
@@ -157,8 +261,255 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, viewMode, exitFullscreen, handleSheetClose])
 
+  const rawImages = images && images.length > 0 ? images : image ? [image] : []
+  const currentIndex = image ? rawImages.indexOf(image) : -1
+  const imageList = currentIndex >= 0 ? rawImages : image ? [image] : []
+  const activeIndex = currentIndex >= 0 ? currentIndex : 0
+  const prevImage = activeIndex > 0 ? imageList[activeIndex - 1] : null
+  const nextImage = activeIndex < imageList.length - 1 ? imageList[activeIndex + 1] : null
+
+  const resetTouchState = useCallback(() => {
+    gestureLockRef.current = 'none'
+    setIsDraggingSheet(false)
+    setIsDraggingCarousel(false)
+    setTranslateY(0)
+    setDragOffsetX(0)
+    startXRef.current = null
+    startYRef.current = null
+  }, [])
+
+  const handleTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) {
+        resetTouchState()
+        gestureLockRef.current = 'blocked'
+        return
+      }
+
+      if (
+        viewMode === 'sheet' &&
+        isScrolledDown(event.target as HTMLElement | null, sheetContentRef.current)
+      ) {
+        gestureLockRef.current = 'blocked'
+        return
+      }
+
+      const touch = event.touches[0]
+      startXRef.current = touch.clientX
+      startYRef.current = touch.clientY
+      startTimeRef.current = Date.now()
+      gestureLockRef.current = 'none'
+      didSwipeRef.current = false
+    },
+    [viewMode, resetTouchState]
+  )
+
+  const handleTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) {
+        resetTouchState()
+        gestureLockRef.current = 'blocked'
+        return
+      }
+      if (
+        gestureLockRef.current === 'blocked' ||
+        startXRef.current === null ||
+        startYRef.current === null
+      ) {
+        return
+      }
+
+      const touch = event.touches[0]
+      const deltaX = touch.clientX - startXRef.current
+      const deltaY = touch.clientY - startYRef.current
+
+      if (
+        Math.abs(deltaX) > TAP_SUPPRESS_DISTANCE ||
+        Math.abs(deltaY) > TAP_SUPPRESS_DISTANCE
+      ) {
+        didSwipeRef.current = true
+      }
+
+      if (gestureLockRef.current === 'none') {
+        if (
+          Math.abs(deltaX) <= DIRECTION_LOCK_SLOP &&
+          Math.abs(deltaY) <= DIRECTION_LOCK_SLOP
+        ) {
+          return
+        }
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+          gestureLockRef.current = 'horizontal'
+          setIsDraggingCarousel(true)
+        } else if (
+          viewMode === 'fullscreen' ||
+          (typeof window !== 'undefined' && window.innerWidth >= 768)
+        ) {
+          gestureLockRef.current = 'blocked'
+          return
+        } else {
+          gestureLockRef.current = 'vertical'
+          setIsDraggingSheet(true)
+        }
+      }
+
+      if (gestureLockRef.current === 'horizontal') {
+        const atLeftBoundary = deltaX > 0 && (!prevImage || !onSelectImage)
+        const atRightBoundary = deltaX < 0 && (!nextImage || !onSelectImage)
+        const effectiveOffset =
+          atLeftBoundary || atRightBoundary ? deltaX * EDGE_DAMPING : deltaX
+        setDragOffsetX(effectiveOffset)
+      } else if (gestureLockRef.current === 'vertical') {
+        setTranslateY(Math.max(0, deltaY))
+      }
+    },
+    [viewMode, prevImage, nextImage, onSelectImage, resetTouchState]
+  )
+
+  const handleTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      const lock = gestureLockRef.current
+      gestureLockRef.current = 'none'
+
+      const touch = event.changedTouches?.[0]
+      const elapsed = Math.max(1, Date.now() - startTimeRef.current)
+
+      if (lock === 'horizontal') {
+        const finalDeltaX =
+          touch && startXRef.current !== null
+            ? touch.clientX - startXRef.current
+            : dragOffsetX
+        const velocityX = Math.abs(finalDeltaX) / elapsed
+        const meetsThreshold =
+          Math.abs(finalDeltaX) >= SWIPE_HORIZONTAL_THRESHOLD ||
+          (velocityX > FLICK_HORIZONTAL_VELOCITY &&
+            Math.abs(finalDeltaX) > FLICK_HORIZONTAL_MIN_DISTANCE)
+
+        const targetImage =
+          finalDeltaX < 0 && nextImage
+            ? nextImage
+            : finalDeltaX > 0 && prevImage
+              ? prevImage
+              : null
+
+        setIsDraggingCarousel(false)
+        setDragOffsetX(0)
+
+        if (meetsThreshold && targetImage && onSelectImage) {
+          onSelectImage(targetImage)
+        }
+      } else if (lock === 'vertical') {
+        const currentY = touch
+          ? touch.clientY
+          : (startYRef.current ?? 0) + translateY
+        const finalDeltaY =
+          startYRef.current !== null
+            ? Math.max(0, currentY - startYRef.current)
+            : translateY
+        const velocityY = finalDeltaY / elapsed
+        const shouldClose =
+          finalDeltaY >= SWIPE_DOWN_THRESHOLD ||
+          (velocityY > FLICK_VELOCITY && finalDeltaY > FLICK_MIN_DISTANCE)
+
+        setIsDraggingSheet(false)
+        setTranslateY(0)
+
+        if (shouldClose) {
+          handleSheetClose()
+        }
+      }
+
+      startXRef.current = null
+      startYRef.current = null
+    },
+    [
+      dragOffsetX,
+      translateY,
+      prevImage,
+      nextImage,
+      onSelectImage,
+      handleSheetClose,
+    ]
+  )
+
+  const handleTouchCancel = useCallback(() => {
+    resetTouchState()
+  }, [resetTouchState])
+
+  const handleImageClick = useCallback(
+    (action: () => void) => {
+      if (didSwipeRef.current) {
+        didSwipeRef.current = false
+        return
+      }
+      action()
+    },
+    []
+  )
+
   if (!isOpen || !image) {
     return null
+  }
+
+  const renderCarouselTrack = (mode: 'sheet' | 'fullscreen') => {
+    const isFullscreen = mode === 'fullscreen'
+    const imgClassName = isFullscreen
+      ? 'w-full h-full object-contain'
+      : 'max-h-[60dvh] w-auto max-w-full object-contain rounded-lg'
+    const visibleIndices = [activeIndex - 1, activeIndex, activeIndex + 1].filter(
+      (idx) => idx >= 0 && idx < imageList.length
+    )
+
+    return (
+      <div
+        ref={carouselTrackRef}
+        data-testid="mobile-image-carousel-track"
+        className={isFullscreen ? 'relative w-full h-full' : 'relative w-full h-[60dvh]'}
+        style={{
+          transform: `translateX(calc(${-activeIndex * 100}% + ${dragOffsetX}px))`,
+          transition: isDraggingCarousel ? 'none' : CAROUSEL_TRANSITION,
+        }}
+      >
+        {visibleIndices.map((idx) => {
+          const slideUrl = imageList[idx]
+          const isActive = idx === activeIndex
+          return (
+            <div
+              key={`${idx}-${slideUrl}`}
+              className="absolute inset-0 flex items-center justify-center"
+              style={{ transform: `translateX(${idx * 100}%)` }}
+              aria-hidden={!isActive ? true : undefined}
+            >
+              {isActive && hasError ? (
+                <div
+                  data-testid="mobile-sheet-image-error"
+                  className={
+                    isFullscreen
+                      ? 'flex flex-col items-center justify-center gap-2 text-zinc-400 p-4'
+                      : 'flex flex-col items-center justify-center gap-2 text-zinc-400 p-8'
+                  }
+                >
+                  <ImageOff size={48} className="text-zinc-500" />
+                  <span className="text-sm">画像の読み込みに失敗しました</span>
+                </div>
+              ) : (
+                <img
+                  src={slideUrl}
+                  alt={isActive ? (isFullscreen ? '全画面画像' : 'プレビュー画像') : ''}
+                  aria-hidden={!isActive ? true : undefined}
+                  onClick={
+                    isActive
+                      ? () => handleImageClick(isFullscreen ? exitFullscreen : enterFullscreen)
+                      : undefined
+                  }
+                  onError={isActive ? () => setHasError(true) : undefined}
+                  className={isActive ? `${imgClassName} cursor-pointer` : imgClassName}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   if (viewMode === 'fullscreen') {
@@ -166,7 +517,11 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
       <div
         ref={containerRef}
         data-testid="mobile-fullscreen-viewer"
-        className="fixed inset-0 z-[var(--z-modal)] bg-black flex items-center justify-center w-full h-[100dvh] touch-manipulation select-none"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        className="fixed inset-0 z-[var(--z-modal)] bg-black flex items-center justify-center w-full h-[100dvh] overflow-hidden touch-manipulation select-none"
       >
         <button
           type="button"
@@ -178,23 +533,7 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
           <X size={20} />
         </button>
 
-        {hasError ? (
-          <div
-            data-testid="mobile-sheet-image-error"
-            className="flex flex-col items-center justify-center gap-2 text-zinc-400 p-4"
-          >
-            <ImageOff size={48} className="text-zinc-500" />
-            <span className="text-sm">画像の読み込みに失敗しました</span>
-          </div>
-        ) : (
-          <img
-            src={image}
-            alt="全画面画像"
-            onClick={exitFullscreen}
-            onError={() => setHasError(true)}
-            className="w-full h-full object-contain cursor-pointer"
-          />
-        )}
+        {renderCarouselTrack('fullscreen')}
       </div>
     )
   }
@@ -212,9 +551,24 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
       />
 
       <div
+        ref={sheetContentRef}
         data-testid="mobile-image-sheet-content"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        style={{
+          transform: translateY > 0 ? `translateY(${translateY}px)` : undefined,
+          transition: isDraggingSheet ? 'none' : CAROUSEL_TRANSITION,
+        }}
         className="w-full bg-surface-2 border-t border-white/10 rounded-t-2xl max-h-[88dvh] p-3.5 flex flex-col overscroll-contain shadow-2xl pb-[calc(14px+env(safe-area-inset-bottom))]"
       >
+        {/* Drag Handle */}
+        <div
+          className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-2 shrink-0"
+          aria-hidden="true"
+        />
+
         {/* Handle / Header */}
         <div className="flex items-center justify-between pb-3 border-b border-white/10">
           <div className="flex items-center gap-2">
@@ -258,24 +612,8 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
         </div>
 
         {/* Image Preview Body */}
-        <div className="flex-1 flex flex-col items-center justify-center py-4 overflow-hidden min-h-[220px]">
-          {hasError ? (
-            <div
-              data-testid="mobile-sheet-image-error"
-              className="flex flex-col items-center justify-center gap-2 text-zinc-400 p-8"
-            >
-              <ImageOff size={48} className="text-zinc-500" />
-              <span className="text-sm">画像の読み込みに失敗しました</span>
-            </div>
-          ) : (
-            <img
-              src={image}
-              alt="プレビュー画像"
-              onClick={enterFullscreen}
-              onError={() => setHasError(true)}
-              className="max-h-[60dvh] w-auto max-w-full object-contain rounded-lg cursor-pointer active:scale-[0.99] transition-transform"
-            />
-          )}
+        <div className="flex-1 flex flex-col items-center justify-center py-4 overflow-hidden touch-pan-y min-h-[220px]">
+          {renderCarouselTrack('sheet')}
         </div>
 
         {/* Footer Guidance */}

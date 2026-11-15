@@ -75,6 +75,7 @@ export const MobileLayout = ({
     tagSets,
     presets,
     comfyObjectInfo,
+    sortedDisplayImages,
     isMultiSelectMode,
     selectedIds,
     handleItemClick,
@@ -985,6 +986,8 @@ export const MobileLayout = ({
         isOpen={isImageSheetOpen}
         onClose={handleCloseImageSheet}
         image={selectedImg}
+        images={sortedDisplayImages}
+        onSelectImage={setSelectedImg}
         onSaveSnapshot={(_img) => setIsSaveModalOpen(true)}
       />
     </div>

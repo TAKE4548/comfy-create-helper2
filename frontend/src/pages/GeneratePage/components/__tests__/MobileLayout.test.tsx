@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MobileLayout } from '../MobileLayout'
@@ -737,6 +738,120 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       // Close image sheet
       fireEvent.click(screen.getByTestId('mobile-sheet-close-btn'))
       expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
+    })
+
+    it('[REQ-431/AC-3] syncs download href and save snapshot target after swiping to next image in MobileImageSheet', () => {
+      const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' as const }))
+      const images = [
+        'http://example.com/img1.png',
+        'http://example.com/img2.png',
+        'http://example.com/img3.png',
+      ]
+      const setSelectedImgSpy = vi.fn()
+      const setIsSaveModalOpenSpy = vi.fn()
+
+      const StatefulWrapper = () => {
+        const [selectedImg, setSelectedImg] = useState<string | null>(images[0])
+        const state = createMockState({
+          showStrip: true,
+          thumbnailTab: 'history',
+          selectedImg,
+          setSelectedImg: (next: string | null) => {
+            setSelectedImgSpy(next)
+            setSelectedImg(next)
+          },
+          setIsSaveModalOpen: setIsSaveModalOpenSpy,
+          sortedDisplayImages: images,
+          images,
+          selectedIds: new Set(),
+          trialAvailability,
+        })
+        return <MobileLayout state={state} />
+      }
+
+      render(<StatefulWrapper />)
+
+      fireEvent.click(screen.getByRole('button', { name: '履歴' }))
+      fireEvent.click(screen.getByRole('button', { name: /generated 1/i }))
+
+      const sheetContent = screen.getByTestId('mobile-image-sheet-content')
+      expect(sheetContent).toBeInTheDocument()
+
+      // Swipe left to move from img1.png to img2.png
+      fireEvent.touchStart(sheetContent, {
+        touches: [{ clientX: 250, clientY: 200 }],
+      })
+      fireEvent.touchMove(sheetContent, {
+        touches: [{ clientX: 100, clientY: 200 }],
+      })
+      fireEvent.touchEnd(sheetContent, {
+        changedTouches: [{ clientX: 100, clientY: 200 }],
+      })
+
+      expect(setSelectedImgSpy).toHaveBeenCalledWith(images[1])
+      expect(screen.getByRole('img', { name: 'プレビュー画像' })).toHaveAttribute('src', images[1])
+
+      const downloadLink = screen.getByRole('link', { name: '画像をダウンロード' })
+      expect(downloadLink).toHaveAttribute('href', images[1])
+
+      const saveBtn = screen.getByTestId('mobile-sheet-save-btn')
+      fireEvent.click(saveBtn)
+      expect(setIsSaveModalOpenSpy).toHaveBeenCalledWith(true)
+    })
+
+    it('[REQ-431/AC-7] syncs history 3-column grid selection highlight after swiping and closing MobileImageSheet', () => {
+      const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' as const }))
+      const images = [
+        'http://example.com/img1.png',
+        'http://example.com/img2.png',
+        'http://example.com/img3.png',
+      ]
+
+      const StatefulWrapper = () => {
+        const [selectedImg, setSelectedImg] = useState<string | null>(images[0])
+        const state = createMockState({
+          showStrip: true,
+          thumbnailTab: 'history',
+          selectedImg,
+          setSelectedImg,
+          sortedDisplayImages: images,
+          images,
+          selectedIds: new Set(),
+          trialAvailability,
+        })
+        return <MobileLayout state={state} />
+      }
+
+      render(<StatefulWrapper />)
+
+      fireEvent.click(screen.getByRole('button', { name: '履歴' }))
+      const thumb0 = screen.getByRole('button', { name: /generated 1/i })
+      const thumb1 = screen.getByRole('button', { name: /generated 2/i })
+      expect(thumb0.className).toContain('border-accent-green')
+      expect(thumb1.className).not.toContain('border-accent-green')
+
+      // Open sheet from first thumbnail
+      fireEvent.click(thumb0)
+      const sheetContent = screen.getByTestId('mobile-image-sheet-content')
+
+      // Swipe left to img2.png
+      fireEvent.touchStart(sheetContent, {
+        touches: [{ clientX: 250, clientY: 200 }],
+      })
+      fireEvent.touchMove(sheetContent, {
+        touches: [{ clientX: 100, clientY: 200 }],
+      })
+      fireEvent.touchEnd(sheetContent, {
+        changedTouches: [{ clientX: 100, clientY: 200 }],
+      })
+
+      // Close sheet
+      fireEvent.click(screen.getByTestId('mobile-sheet-close-btn'))
+      expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
+
+      // History grid selection must now highlight thumb1 (img2.png) instead of thumb0
+      expect(thumb1.className).toContain('border-accent-green')
+      expect(thumb0.className).not.toContain('border-accent-green')
     })
 
     it('[REQ-425/AC-4] renders prompt template split editor and filters out assigned roles from mobile prompt tabs', () => {
