@@ -271,7 +271,7 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
 
 - メインアプリのAPIおよび共有イベント接続は8000番を使用する。ブラウザーはGeneration APIと `/api/ws` に接続し、ComfyUIへのWebSocket/HTTP上流通信はバックエンドが仲介する。上流接続に使うComfyUI `client_id` はバックエンド専用である。
 - Managerの管理UIはメインアプリ設定ページのシステム欄から使う。8000番のメインアプリが停止している場合の復旧操作には、既存8899番Managerの埋め込みFEを使う。
-- `SYSTEM_STATS` の2.5秒配信と `VRAM_RECOVERED` は既存の型・意味を維持し、Generation snapshotの更新周期へ統合・変更しない。
+- `SYSTEM_STATS` の2.5秒配信と `VRAM_RECOVERED` は既存の型・意味を維持し、Generation snapshotの更新周期へ統合・変更しない。REQ-432 では `SYSTEM_STATS` に判定結果の任意フィールド（`vram_guard_free_gb`、`vram_own_residual_gb`、`vram_hold_reason`、`vram_measure_source`）を加え、`vram_safe` の意味を判定用空き基準へ改訂した（詳細は §5-4 の 5）。既存フィールドの型と2.5秒周期は変更しない。
 
 ### 2-10. PCリソース監視 HUD & モバイルチップ (REQ-288)
 
@@ -281,6 +281,8 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
   - FastAPI WebSocket エンドポイント `/api/ws` から 2.5 秒間隔で `SYSTEM_STATS` メッセージを Discriminated Union 形式でブロードキャスト。
   - CPU, RAM（使用量/総量/比率）、GPU 使用率、VRAM（使用量/総量/比率）をサンプリング。
   - Windows 環境（REQ-289, REQ-290）では `WindowsGpuMonitor`（DXGI による VRAM 総量動的検出およびプライマリ GPU LUID 抽出 + PDH による全エンジン網羅 `\GPU Engine(*)\Utilization Percentage` サンプリング）により、物理エンジン別プロセス合算の最大値（MAX across all engines）をタスクマネージャー準拠で算出。ComfyUI 画像生成やローカル LLM（LM Studio / Ollama）等のテンソル演算（Compute エンジン）負荷を確実に反映する。Linux/ROCm 環境では `rocm-smi` から取得し、取得不可時は `null`（UI 表示上は `--`）として安全にフォールバック。
+  - Windows の VRAM 使用量（REQ-432）: PDH `\GPU Adapter Memory(*)\Dedicated Usage` のうち、DXGI で選んだ primary LUID に一致するインスタンス（小文字化した名前に `luid_<primary LUID>_` を含むもの）だけを合算する。同一 LUID の複数 `phys_N` は合算する。primary LUID が未解決、または一致するインスタンスが 0 件の場合は全インスタンスを合算する（使用量を過大に見積もる安全側の扱い。0 を返さない）。`SYSTEM_STATS` の `vram_used_gb` / `vram_pct` とヘッダー表示の VRAM 使用量も同じ基準とする。
+  - 既知の制約（REQ-432）: ComfyUI を WSL2 で動かす場合、Windows 側計測では ComfyUI が `vmwp.exe`（WSL VM ワーカー）として見え、`/free` 後の PDH 上の反映は約 12 秒遅れる（2026-11-16 計測、`docs/logs/REQ-432/vram-measurement.md`）。生成ガードは ComfyUI 基準の値を主に用いるため、この遅延は通常経路の判定に影響しない（§5-4 の 1）。
 - **フロントエンド連携 & 省電力設計 (`useSystemStats.ts`, `systemWsService.ts`)**:
   - 再接続時に指数バックオフ（1s, 2s, 4s, 最大10s）を適用。
   - Page Visibility API（`document.visibilityState === 'hidden'`）により、タブ非アクティブ時は接続を自動 suspend して CPU/GPU 負荷と描画を抑制し、タブ復帰時に resume。
@@ -474,16 +476,23 @@ frontend/src/store/
 ### 5-4. 生成前他プロセスVRAM競合防止と待機通知 (REQ-260)
 
 1. **VRAM受付後ゲート（Preflight Guard）**:
-   - BatchRequestの受付とユーザー操作はWebSocket接続や現在のVRAM空き量を待たずに行い、workerがComfyUI上流へ送る直前にホストGPU空きVRAM（`vram_free_gb`）を評価する。判定にはバックエンドのSYSTEM_STATSまたはオンデマンド計測を使い、低VRAMなら未投入jobをworker側で待機させる。ブラウザーが待機を監視・表示することは、ブラウザーからの上流送信やworker状態の代替を意味しない。
-   - 空きVRAMが安全基準値（デフォルト4.0GB、`settings.vram_min_free_gb`）を下回る場合、受付済みrequestを維持して上流投入を保留する。受付済jobの通常キャンセルと、低VRAM wait中の未投入分キャンセルは区別する。
+   - BatchRequestの受付とユーザー操作はWebSocket接続や現在のVRAM空き量を待たずに行い、workerがComfyUI上流へ送る直前に判定する。判定は判定のたびに新規取得した値で行い（REQ-432。`ResourceMonitorService.sample_guard_status`、2.5秒周期の監視キャッシュ値は使わない）、低VRAMなら未投入jobをworker側で待機させる。ブラウザーが待機を監視・表示することは、ブラウザーからの上流送信やworker状態の代替を意味しない。
+   - 判定値（REQ-432）: 判定用空き `vram_guard_free_gb` が安全基準値（`app_settings` の `vram_min_free_gb`、既定 6.0GB。`resource_monitor` の初期値と一致）を下回る場合、受付済みrequestを維持して上流投入を保留する（`vram_safe` = 判定用空き ≥ 安全基準値）。`vram_free_gb` は物理空き（primary アダプタ）のまま変更しない。受付済jobの通常キャンセルと、低VRAM wait中の未投入分キャンセルは区別する。
+   - 判定用空き（REQ-432、契約 C1）: ComfyUI `/system_stats` の `devices[0]` について、総量 T（`vram_total`）、デバイス空き F（`vram_free`）、torch 予約量 R（`torch_vram_total`）、予約内の未使用量 Rf（`torch_vram_free`）とする。自セッション残留 `vram_own_residual_gb` = R、判定用空き `vram_guard_free_gb` = clamp((F − Rf) + R, 0, T)。GiB 換算は `bytes / 1024**3` とし、小数第 2 位で丸める。ComfyUI は保持モデルを次の実行時に自ら退避・回収するため、自セッション残留だけを理由に保留しない。同じ ComfyUI を他クライアントが使う場合、その保持分も同じ扱いとなる。
+   - 再評価（REQ-432）: 初回判定は即時に行う。保留中の再評価は 1 ジョブあたり 1.0 秒間隔とし、各再評価のたびに新規取得する（0.2 秒ごとの `/system_stats` 呼び出しを避けるため）。
+   - フォールバック（REQ-432）: ComfyUI の値が取得できない（timeout 1.0 秒、接続失敗、HTTP エラー、非 JSON、`devices` 欠落、不正値）場合は、primary アダプタのホスト空き VRAM で判定する。このとき占有元は区別できないため保留理由は `unattributed` とする。双方とも取得不能なら判定不能のため保留しない（従来どおり）。
+   - 自動 /free（REQ-432）: 生成完了後に Backend が ComfyUI `/free` を自動実行することはしない（モデル再ロード待ちを毎回招き、Windows 側計測の反映遅延も解消しないため）。手動の「メモリ解放」（SPEC_SETTINGS §3、REQ-380/REQ-412）は従来どおり。
 2. **専用ステータス表示 & UIフィードバック (AC-2)**:
-   - 待機状態中は生成進行UI上に専用ステータス「VRAM解放待ち（他プロセスの終了待機中）」および「空き容量 / 必要容量 / 待機経過秒数」をリアルタイム表示する。WebSocketからの2.5秒周期プッシュにより、空き容量表示は自動追従する。
+   - 待機状態中は生成進行UI上に専用ステータスおよび「空き容量 / 必要容量 / 待機経過秒数」をリアルタイム表示する。WebSocketからの2.5秒周期プッシュにより、空き容量表示は自動追従する。
+   - 保留理由（REQ-432、AC-2）: `external`（自セッション残留を除いても不足 = 他プロセス等の占有）と `unattributed`（ComfyUI の値が取得できず、ホスト値で判定したため占有元を判別できない）を区別する。自セッション残留は保留理由にならない。
+   - 表示（REQ-432）: `external` は従来の「VRAM解放待ち（他プロセスの終了待機中）」（モバイルのバナーは「VRAM解放待ち（待機中）」）。`unattributed` はデスクトップで「VRAM解放待ち（占有元を判別できません）」、モバイルのバナーで「VRAM解放待ち（占有元未確認）」。理由欠落（旧 Backend）は `external` と同じ文言とする。待機表示の「空き」は判定用空き（`vram_guard_free_gb`、欠落時は `vram_free_gb`）を表示する。
 3. **長時間待機通知 (AC-3)**:
-   - 待機状態が10秒以上継続した場合、画面上へ警告トーストを発行し、他プロセス（ローカルLLM等）の完了待機中である旨をユーザーへ明示する。
+   - 待機状態が10秒以上継続した場合、画面上へ警告トーストを発行し、待機中である旨をユーザーへ明示する。`external` のときは他プロセス（ローカルLLM等）の完了待機中である旨とする。`unattributed` のときは「占有元を判別できません」とする（REQ-432）。Backend は同じ条件で `reason`、`guard_free_gb`、`min_free_gb`、`source` を含む警告ログを出す。
 4. **即時待機キャンセル (AC-4)**:
    - 待機中、ユーザーはステータスバーやアクションバーの「待機キャンセル」から当該accepted requestの未投入jobだけを取り消せる。FEは既存のguard付きjob cancelを使い、取消時点でqueuedかつprompt ID未確定のjobだけをbackendが原子的に対象とする。ComfyUI上流へ既投入のjob、running job、Studioや別requestは中断しない。ブラウザー接続断はworkerを停止しない。
 5. **WebSocketプッシュ駆動の自動再開 (AC-5)**:
    - workerは新しいVRAM状態を評価して安全になった待機jobを上流へ送る。FEは `SYSTEM_STATS`（`vram_safe: true`）または `VRAM_RECOVERED` とGeneration snapshotで待機表示を更新し、上流投入を重ねて行わない。通常の2.5秒SYSTEM_STATS周期を変更しない。
+   - `SYSTEM_STATS` 追加フィールド（REQ-432、任意）: `vram_guard_free_gb`（判定用空き、GiB）、`vram_own_residual_gb`（自セッション残留、GiB）、`vram_hold_reason`（`external` / `unattributed` / null）、`vram_measure_source`（`comfyui` / `host` / null）。既存フィールドの型と2.5秒周期は維持する。`vram_safe` は判定用空きに基づく値へ意味を改訂する。`vram_free_gb` は物理空きのまま。`VRAM_RECOVERED` の形式と発火条件（`vram_safe` が false から true）は維持する。REST `/api/settings/vram` の返却キーは変更しない。
 
 ### 5-5. キュー投入失敗理由通知 (REQ-307)
 

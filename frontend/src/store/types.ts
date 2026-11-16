@@ -139,6 +139,7 @@ export interface VramWaitStatus {
   freeGb: number | null;
   requiredGb: number;
   waitDurationSec: number;
+  reason?: 'external' | 'unattributed';
 }
 
 export interface GenerationServerState {
@@ -291,6 +292,10 @@ export interface SystemStats {
   vram_free_gb?: number | null;
   vram_safe?: boolean;
   vram_min_free_gb?: number;
+  vram_guard_free_gb?: number | null;
+  vram_own_residual_gb?: number | null;
+  vram_hold_reason?: 'external' | 'unattributed' | null;
+  vram_measure_source?: 'comfyui' | 'host' | null;
   ts: number;
 }
 

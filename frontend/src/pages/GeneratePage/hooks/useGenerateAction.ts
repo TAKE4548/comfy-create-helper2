@@ -100,6 +100,7 @@ export function useGenerateAction(
     let unsubscribe: (() => void) | null = null
     let waitDurationSec = 0
     let lastFreeGb: number | null = null
+    let lastHoldReason: 'external' | 'unattributed' | undefined
     let lastRequiredGb = 6
     let settled = false
     let warningShown = false
@@ -137,14 +138,19 @@ export function useGenerateAction(
         return
       }
       if (stats?.vram_safe !== false) return
-      lastFreeGb = stats.vram_free_gb ?? lastFreeGb
+      lastFreeGb = stats.vram_guard_free_gb ?? stats.vram_free_gb ?? lastFreeGb
+      const holdReason = stats.vram_hold_reason === 'external' || stats.vram_hold_reason === 'unattributed'
+        ? stats.vram_hold_reason
+        : undefined
+      lastHoldReason = holdReason
       lastRequiredGb = stats.vram_min_free_gb ?? lastRequiredGb
-      const nextWaitStatus = { isWaiting: true, freeGb: lastFreeGb, requiredGb: lastRequiredGb, waitDurationSec }
+      const nextWaitStatus = { isWaiting: true, freeGb: lastFreeGb, requiredGb: lastRequiredGb, waitDurationSec, reason: holdReason }
       const currentWaitStatus = getLatestState().vramWaitStatus
       if (currentWaitStatus?.isWaiting !== nextWaitStatus.isWaiting ||
           currentWaitStatus.freeGb !== nextWaitStatus.freeGb ||
           currentWaitStatus.requiredGb !== nextWaitStatus.requiredGb ||
-          currentWaitStatus.waitDurationSec !== nextWaitStatus.waitDurationSec) {
+          currentWaitStatus.waitDurationSec !== nextWaitStatus.waitDurationSec ||
+          currentWaitStatus.reason !== nextWaitStatus.reason) {
         setVramWaitStatus?.(nextWaitStatus)
       }
       if (!timer) {
@@ -153,7 +159,9 @@ export function useGenerateAction(
           update()
           if (!settled && !warningShown && waitDurationSec >= 10) {
             warningShown = true
-            setErrorToast?.({ message: 'VRAM解放待ちが継続しています。他プロセスの終了待機中（キャンセル可能）', type: 'warning' as any })
+            setErrorToast?.({ message: lastHoldReason === 'unattributed'
+                ? 'VRAM解放待ちが継続しています。占有元を判別できません（キャンセル可能）'
+                : 'VRAM解放待ちが継続しています。他プロセスの終了待機中（キャンセル可能）', type: 'warning' as any })
           }
         }, 1000)
       }

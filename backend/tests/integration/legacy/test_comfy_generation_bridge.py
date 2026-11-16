@@ -585,3 +585,62 @@ async def test_upload_image_http_failure_propagates_and_marks_upstream_not_ready
         assert bridge.get_upstream_state()["http_ready"] is False
     finally:
         await bridge.stop()
+
+
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-1")
+@pytest.mark.asyncio
+async def test_system_stats_returns_payload_without_touching_health() -> None:
+    """[REQ-432/AC-1] A healthy /system_stats object is returned as-is with a 1s timeout and unchanged health state."""
+    payload = {"devices": [{"vram_total": 1, "vram_free": 1, "torch_vram_total": 0, "torch_vram_free": 0}]}
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=payload)
+
+    bridge = _http_bridge(handler)
+    try:
+        before = bridge.get_upstream_state()
+        assert await bridge.system_stats() == payload
+        assert bridge.get_upstream_state() == before
+    finally:
+        await bridge._http.aclose()
+    assert seen[0].url.path == "/system_stats"
+    assert seen[0].extensions["timeout"]["read"] == 1.0
+
+
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-2")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode",
+    [
+        pytest.param("503", id="503"),
+        pytest.param("timeout", id="timeout"),
+        pytest.param("connect", id="connect"),
+        pytest.param("non_json", id="non_json"),
+        pytest.param("array", id="array"),
+    ],
+)
+async def test_system_stats_faults_return_none_without_touching_health(mode: str) -> None:
+    """[REQ-432/AC-2] Any /system_stats failure yields None and leaves the upstream health state untouched."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if mode == "503":
+            return httpx.Response(503, text="busy")
+        if mode == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        if mode == "connect":
+            raise httpx.ConnectError("down", request=request)
+        if mode == "non_json":
+            return httpx.Response(200, text="not json")
+        return httpx.Response(200, json=[1, 2, 3])
+
+    bridge = _http_bridge(handler)
+    try:
+        before = bridge.get_upstream_state()
+        assert await bridge.system_stats() is None
+        assert bridge.get_upstream_state() == before
+    finally:
+        await bridge._http.aclose()

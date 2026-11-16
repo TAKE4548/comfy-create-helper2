@@ -890,7 +890,7 @@ export const MobileLayout = ({
             <AlertTriangle size={16} className="text-yellow-400 animate-pulse flex-shrink-0" />
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-semibold text-yellow-300 truncate">
-                VRAM解放待ち（待機中）
+                {vramWaitStatus.reason === 'unattributed' ? 'VRAM解放待ち（占有元未確認）' : 'VRAM解放待ち（待機中）'}
               </span>
               <span className="text-[10px] text-zinc-400 truncate ux-numeric">
                 空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'} GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)} GB ({vramWaitStatus.waitDurationSec}s)

@@ -26,6 +26,11 @@ class FakeBridge:
         self.submissions: list[dict[str, Any]] = []
         self.preview: dict[str, tuple[bytes, str]] = {}
         self.queue_error: Exception | None = None
+        self.system_stats_calls = 0
+
+    async def system_stats(self) -> dict[str, Any] | None:
+        self.system_stats_calls += 1
+        return None
 
     async def start(self, on_event: Any, on_preview: Any) -> None:
         self.started += 1
@@ -76,10 +81,40 @@ class FakeBridge:
 
 class FakeMonitor:
     def __init__(self) -> None:
-        self.status = {"vram_guard_enabled": True, "vram_min_free_gb": 2.0, "vram_free_gb": 1.0}
+        self.status: dict[str, Any] = {"vram_guard_enabled": True, "vram_min_free_gb": 2.0, "vram_free_gb": 1.0}
         self.started = 0
         self.stopped = 0
         self.broadcast: Any = None
+        self.comfy_stats_provider: Any = None
+        self.configured: list[Any] = []
+
+    def configure_comfy_stats(self, provider: Any) -> None:
+        self.comfy_stats_provider = provider
+        self.configured.append(provider)
+
+    async def sample_guard_status(self) -> dict[str, Any]:
+        status = dict(self.status)
+        free = status.get("vram_free_gb")
+        minimum = status.get("vram_min_free_gb")
+        if "vram_safe" in status:
+            safe = status["vram_safe"]
+        elif not status.get("vram_guard_enabled"):
+            safe = True
+        elif isinstance(free, (int, float)) and isinstance(minimum, (int, float)):
+            safe = free >= minimum
+        else:
+            safe = True
+        return {
+            "vram_guard_enabled": status.get("vram_guard_enabled"),
+            "vram_min_free_gb": minimum,
+            "vram_free_gb": free,
+            "vram_total_gb": status.get("vram_total_gb"),
+            "vram_guard_free_gb": status.get("vram_guard_free_gb", free),
+            "vram_own_residual_gb": status.get("vram_own_residual_gb"),
+            "vram_hold_reason": status.get("vram_hold_reason"),
+            "vram_measure_source": status.get("vram_measure_source"),
+            "vram_safe": safe,
+        }
 
     def get_vram_status(self) -> dict[str, Any]:
         return dict(self.status)
@@ -372,7 +407,8 @@ def test_committed_work_continues_after_request_without_browser_connection(api: 
     assert client.get(f"/api/generation/requests/{payload['request_id']}").status_code == 200
 
     api["monitor"].status["vram_free_gb"] = 4.0
-    for _ in range(100):
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
         if api["bridge"].submissions:
             break
         time.sleep(0.01)

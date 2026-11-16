@@ -1,14 +1,133 @@
 import asyncio
 import json
+import logging
+import math
 import subprocess
 import sys
 import time
-from typing import Callable, Awaitable, Any
+from dataclasses import dataclass
+from typing import Callable, Awaitable, Any, Iterable, Literal
 
 try:
     import psutil
 except ImportError:
     psutil = None  # type: ignore
+
+logger = logging.getLogger(__name__)
+
+_adapter_fallback_logged: bool = False
+
+# ---------------------------------------------------------------------------
+# VRAM ガード判定（純粋関数）
+# ---------------------------------------------------------------------------
+
+HoldReason = Literal["external", "unattributed"]
+MeasureSource = Literal["comfyui", "host"]
+
+_GIB = 1024 ** 3
+
+
+@dataclass(frozen=True)
+class ComfyVramSnapshot:
+    vram_total_bytes: int      # devices[0].vram_total (T)
+    vram_free_bytes: int       # devices[0].vram_free (F)
+    torch_reserved_bytes: int  # devices[0].torch_vram_total (R)
+    torch_free_bytes: int      # devices[0].torch_vram_free (Rf)
+
+
+@dataclass(frozen=True)
+class VramGuardDecision:
+    safe: bool
+    guard_free_gb: float | None
+    own_residual_gb: float | None
+    hold_reason: HoldReason | None  # None iff safe
+    source: MeasureSource | None    # None iff comfy and host both unavailable
+
+
+def _byte_field(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if value < 0:
+        return None
+    return int(value)
+
+
+def parse_comfy_system_stats(payload: Any) -> ComfyVramSnapshot | None:
+    """Parse ComfyUI /system_stats into a snapshot. Returns None for any invalid payload."""
+    try:
+        if not isinstance(payload, dict):
+            return None
+        devices = payload.get("devices")
+        if not isinstance(devices, list) or not devices:
+            return None
+        dev = devices[0]
+        if not isinstance(dev, dict):
+            return None
+        total = _byte_field(dev.get("vram_total"))
+        free = _byte_field(dev.get("vram_free"))
+        reserved = _byte_field(dev.get("torch_vram_total"))
+        torch_free = _byte_field(dev.get("torch_vram_free"))
+        if total is None or free is None or reserved is None or torch_free is None:
+            return None
+        if total <= 0 or free > total or torch_free > reserved:
+            return None
+        return ComfyVramSnapshot(total, free, reserved, torch_free)
+    except Exception:
+        return None
+
+
+def evaluate_vram_guard(
+    *,
+    guard_enabled: bool,
+    min_free_gb: float,
+    host_free_gb: float | None,
+    comfy: ComfyVramSnapshot | None,
+) -> VramGuardDecision:
+    """Decide whether generation may start. ComfyUI's own reserve is treated as reclaimable."""
+    guard_free: float | None
+    own_residual: float | None
+    source: MeasureSource
+    reason: HoldReason
+    if comfy is not None:
+        reclaimable = (comfy.vram_free_bytes - comfy.torch_free_bytes) + comfy.torch_reserved_bytes
+        clamped = min(max(reclaimable, 0), comfy.vram_total_bytes)
+        guard_free = round(clamped / _GIB, 2)
+        own_residual = round(comfy.torch_reserved_bytes / _GIB, 2)
+        source = "comfyui"
+        reason = "external"
+    elif host_free_gb is not None:
+        guard_free = host_free_gb
+        own_residual = None
+        source = "host"
+        reason = "unattributed"
+    else:
+        return VramGuardDecision(True, None, None, None, None)
+
+    safe = (not guard_enabled) or guard_free >= min_free_gb
+    return VramGuardDecision(safe, guard_free, own_residual, None if safe else reason, source)
+
+
+def sum_adapter_dedicated_usage(samples: Iterable[tuple[str, float]], primary_luid_hex: str | None) -> float:
+    """Sum PDH dedicated usage of the primary adapter; fall back to all samples when unresolved or unmatched."""
+    global _adapter_fallback_logged
+    items = [(name.lower(), value) for name, value in samples]
+    if primary_luid_hex:
+        tag = f"luid_{primary_luid_hex.lower()}_"
+        matched = [value for name, value in items if tag in name]
+        if matched:
+            return float(sum(matched))
+    if not _adapter_fallback_logged:
+        _adapter_fallback_logged = True
+        logger.debug(
+            "VRAM adapter fallback to all-instance sum: reason=%s primary_luid_hex=%s instances=%s",
+            "no_match" if primary_luid_hex else "unresolved",
+            primary_luid_hex,
+            len(items),
+        )
+    return float(sum(value for _, value in items))
+
 
 # ---------------------------------------------------------------------------
 # Windows 用 GPU / VRAM モニター (DXGI + PDH)
@@ -209,6 +328,39 @@ if sys.platform == "win32":
             except Exception:
                 return 0.0
 
+        def _read_counter_items(self, h_counter, fmt) -> list[tuple[str, float]]:
+            """PDH counter array を (instance name, value) のリストとして読み出す（I/O 専用）。"""
+            if not self._initialized or not h_counter or self._pdh is None:
+                return []
+            try:
+                buf_size = ctypes.c_uint32(0)
+                item_count = ctypes.c_uint32(0)
+                self._pdh.PdhGetFormattedCounterArrayW(h_counter, fmt, ctypes.byref(buf_size), ctypes.byref(item_count), None)
+                if buf_size.value == 0:
+                    return []
+
+                buf = ctypes.create_string_buffer(buf_size.value)
+                status = self._pdh.PdhGetFormattedCounterArrayW(
+                    h_counter, fmt, ctypes.byref(buf_size), ctypes.byref(item_count), ctypes.cast(buf, ctypes.c_void_p)
+                )
+                if status != 0:
+                    return []
+
+                items = ctypes.cast(buf, ctypes.POINTER(self.ItemStruct))
+                result: list[tuple[str, float]] = []
+                for i in range(item_count.value):
+                    item = items[i]
+                    if item.FmtValue.CStatus != 0:
+                        continue
+                    if fmt == self.PDH_FMT_DOUBLE:
+                        value = float(item.FmtValue.val.doubleValue)
+                    else:
+                        value = float(item.FmtValue.val.largeValue)
+                    result.append((item.szName or "", value))
+                return result
+            except Exception:
+                return []
+
         def _get_engine_max(self, h_counter) -> float:
             if not self._initialized or not h_counter or self._pdh is None:
                 return 0.0
@@ -269,7 +421,9 @@ if sys.platform == "win32":
                 self._pdh.PdhCollectQueryData(self._h_query)
 
                 gpu_pct = self._get_engine_max(self._h_gpu)
-                vram_bytes = self._get_sum(self._h_vram, self.PDH_FMT_LARGE, is_double=False)
+                vram_bytes = sum_adapter_dedicated_usage(
+                    self._read_counter_items(self._h_vram, self.PDH_FMT_LARGE), self.primary_luid_hex
+                )
 
                 vram_used_gb = round(vram_bytes / (1024 ** 3), 1)
                 vram_pct = round((vram_used_gb / self.vram_total_gb) * 100, 1) if self.vram_total_gb else None
@@ -314,6 +468,7 @@ class ResourceMonitorService:
         self._last_vram_free_gb: float | None = None
         self._last_vram_total_gb: float | None = None
         self._broadcast_fn: Callable[[str], Awaitable[None]] | None = None
+        self._comfy_stats_provider: Callable[[], Awaitable[dict[str, Any] | None]] | None = None
         if sys.platform == "win32":
             try:
                 self._win_gpu_monitor = WindowsGpuMonitor()
@@ -342,6 +497,55 @@ class ResourceMonitorService:
         """VRAM監視の安全閾値とガード有効フラグを更新する。"""
         self._min_free_gb = float(min_free_gb)
         self._guard_enabled = bool(enabled)
+
+    def configure_comfy_stats(self, provider: Callable[[], Awaitable[dict[str, Any] | None]] | None) -> None:
+        """ComfyUI /system_stats を取得するプロバイダを設定する（None で解除）。"""
+        self._comfy_stats_provider = provider
+
+    async def _fetch_comfy_snapshot(self) -> ComfyVramSnapshot | None:
+        provider = self._comfy_stats_provider
+        if provider is None:
+            return None
+        try:
+            payload = await asyncio.wait_for(provider(), timeout=1.0)
+        except Exception:
+            return None
+        return parse_comfy_system_stats(payload)
+
+    async def _evaluate_now(self) -> tuple[tuple, float | None, VramGuardDecision]:
+        """Fresh host I/O + fresh ComfyUI stats -> guard decision. Never reads the _last_* caches."""
+        gpu = await self._get_gpu_stats()
+        _gpu_pct, vram_used, vram_total, _vram_pct = gpu
+        host_free_gb: float | None = None
+        if vram_total is not None and vram_used is not None:
+            host_free_gb = round(max(0.0, vram_total - vram_used), 2)
+            self._last_vram_free_gb = host_free_gb
+            self._last_vram_total_gb = vram_total
+        elif vram_total is not None:
+            self._last_vram_total_gb = vram_total
+        comfy = await self._fetch_comfy_snapshot()
+        decision = evaluate_vram_guard(
+            guard_enabled=self._guard_enabled,
+            min_free_gb=self._min_free_gb,
+            host_free_gb=host_free_gb,
+            comfy=comfy,
+        )
+        return gpu, host_free_gb, decision
+
+    async def sample_guard_status(self) -> dict[str, Any]:
+        """呼び出しごとに新規サンプリングして VRAM ガード判定を返す。"""
+        gpu, host_free_gb, decision = await self._evaluate_now()
+        return {
+            "vram_guard_enabled": self._guard_enabled,
+            "vram_min_free_gb": self._min_free_gb,
+            "vram_free_gb": host_free_gb,
+            "vram_total_gb": gpu[2],
+            "vram_guard_free_gb": decision.guard_free_gb,
+            "vram_own_residual_gb": decision.own_residual_gb,
+            "vram_hold_reason": decision.hold_reason,
+            "vram_measure_source": decision.source,
+            "vram_safe": decision.safe,
+        }
 
     def get_vram_status(self) -> dict:
         """現在のVRAM状態と閾値設定を返す。"""
@@ -402,20 +606,7 @@ class ResourceMonitorService:
             ram_total_gb = 0.0
             ram_pct = 0.0
 
-        gpu_pct, vram_used, vram_total, vram_pct = await self._get_gpu_stats()
-
-        vram_free_gb: float | None = None
-        vram_safe: bool = True
-        if vram_total is not None and vram_used is not None:
-            vram_free_gb = round(max(0.0, vram_total - vram_used), 2)
-            self._last_vram_free_gb = vram_free_gb
-            self._last_vram_total_gb = vram_total
-            if self._guard_enabled:
-                vram_safe = bool(vram_free_gb >= self._min_free_gb)
-            else:
-                vram_safe = True
-        elif vram_total is not None:
-            self._last_vram_total_gb = vram_total
+        (gpu_pct, vram_used, vram_total, vram_pct), vram_free_gb, decision = await self._evaluate_now()
 
         return {
             "cpu_pct": cpu,
@@ -426,7 +617,11 @@ class ResourceMonitorService:
             "vram_used_gb": vram_used,
             "vram_total_gb": vram_total,
             "vram_free_gb": vram_free_gb,
-            "vram_safe": vram_safe,
+            "vram_safe": decision.safe,
+            "vram_guard_free_gb": decision.guard_free_gb,
+            "vram_own_residual_gb": decision.own_residual_gb,
+            "vram_hold_reason": decision.hold_reason,
+            "vram_measure_source": decision.source,
             "vram_min_free_gb": self._min_free_gb,
             "vram_guard_enabled": self._guard_enabled,
             "vram_pct": vram_pct,

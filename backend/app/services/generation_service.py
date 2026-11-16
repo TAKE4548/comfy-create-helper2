@@ -5,6 +5,7 @@ import copy
 import inspect
 import logging
 from collections import deque
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
@@ -93,11 +94,15 @@ class GenerationService:
         publish: Callable[[dict[str, Any]], Any] | None,
         *,
         ref_image_supplier: RefImageSupplier | None = None,
+        vram_probe: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        vram_recheck_seconds: float = 0.0,
     ) -> None:
         self.repository = repository
         self.bridge = bridge
         self.clock = clock
         self.vram_status = vram_status
+        self.vram_probe = vram_probe
+        self.vram_recheck_seconds = vram_recheck_seconds
         self.publish = publish
         self._lock = asyncio.Lock()
         self._wake = asyncio.Event()
@@ -111,6 +116,7 @@ class GenerationService:
         self._worker: asyncio.Task[None] | None = None
         self._vram_wait_started: dict[str, float] = {}
         self._vram_warned: set[str] = set()
+        self._vram_last_checked: dict[str, float] = {}
         self._cancel_requested: set[str] = set()
         self._last_reconcile = 0.0
         self._reconcile_failures = 0
@@ -289,6 +295,7 @@ class GenerationService:
             self._drop_pending({job.job_id})
             self._frozen_graphs.pop(job.job_id, None)
             self._vram_wait_started.pop(job.job_id, None)
+            self._vram_last_checked.pop(job.job_id, None)
             self._vram_warned.discard(job.job_id)
             self.repository.transition(job.job_id, "cancelled", finished_at=self._now())
             self._wake.set()
@@ -315,6 +322,7 @@ class GenerationService:
                 self._drop_pending({job.job_id})
                 self._frozen_graphs.pop(job.job_id, None)
                 self._vram_wait_started.pop(job.job_id, None)
+                self._vram_last_checked.pop(job.job_id, None)
                 self._vram_warned.discard(job.job_id)
                 self.repository.transition(job.job_id, "cancelled", finished_at=self._now())
                 self._wake.set()
@@ -458,6 +466,7 @@ class GenerationService:
         self._drop_pending({job.job_id})
         self._frozen_graphs.pop(job.job_id, None)
         self._vram_wait_started.pop(job.job_id, None)
+        self._vram_last_checked.pop(job.job_id, None)
         self._vram_warned.discard(job.job_id)
         self._cancel_requested.discard(job.job_id)
         self._known_prompt_ids.pop(job.job_id, None)   # _binding_retry は late identity 用に残す
@@ -709,21 +718,41 @@ class GenerationService:
                     self._pending.popleft()
                     self._pending_ids.discard(item.job_id)
                     continue
+                if item.job_id in self._vram_wait_started and self.vram_recheck_seconds > 0:
+                    last_checked = self._vram_last_checked.get(item.job_id)
+                    if (
+                        last_checked is not None
+                        and asyncio.get_running_loop().time() - last_checked < self.vram_recheck_seconds
+                    ):
+                        continue
                 try:
-                    status = self.vram_status()
+                    if self.vram_probe is not None:
+                        status = await self.vram_probe()
+                    else:
+                        status = self.vram_status()
                 except Exception:
                     logger.warning("VRAM status is unavailable; the generation guard cannot block submission", exc_info=True)
                     status = {}
+                self._vram_last_checked[item.job_id] = asyncio.get_running_loop().time()
                 if self._is_vram_blocked(status):
                     now_seconds = self._clock_seconds()
                     started = self._vram_wait_started.setdefault(item.job_id, now_seconds)
                     if now_seconds - started >= 10.0 and item.job_id not in self._vram_warned:
-                        logger.warning("Generation %s is waiting for the configured VRAM threshold", item.job_id)
+                        logger.warning(
+                            "Generation %s is waiting for the configured VRAM threshold "
+                            "(reason=%s, guard_free_gb=%s, min_free_gb=%s, source=%s)",
+                            item.job_id,
+                            status.get("vram_hold_reason") or "unattributed",
+                            status.get("vram_guard_free_gb", status.get("vram_free_gb")),
+                            status.get("vram_min_free_gb"),
+                            status.get("vram_measure_source"),
+                        )
                         self._vram_warned.add(item.job_id)
                     continue
                 self._pending.popleft()
                 self._pending_ids.discard(item.job_id)
                 self._vram_wait_started.pop(item.job_id, None)
+                self._vram_last_checked.pop(item.job_id, None)
                 self._vram_warned.discard(item.job_id)
                 try:
                     self.repository.transition(item.job_id, "submitting")
@@ -1602,9 +1631,16 @@ class GenerationService:
     def _is_vram_blocked(self, status: dict[str, Any]) -> bool:
         if not status.get("vram_guard_enabled"):
             return False
-        free = status.get("vram_free_gb")
+        free = status.get("vram_guard_free_gb")
+        if not isinstance(free, (int, float)) or isinstance(free, bool):
+            free = status.get("vram_free_gb")
         minimum = status.get("vram_min_free_gb")
-        if isinstance(free, (int, float)) and isinstance(minimum, (int, float)):
+        if (
+            isinstance(free, (int, float))
+            and not isinstance(free, bool)
+            and isinstance(minimum, (int, float))
+            and not isinstance(minimum, bool)
+        ):
             return free < minimum
         return False
 

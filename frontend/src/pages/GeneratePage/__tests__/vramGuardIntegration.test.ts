@@ -210,6 +210,98 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     vi.useRealTimers()
   })
 
+  it('[REQ-432/AC-2] external hold exposes reason and guard free value in wait status', async () => {
+    const submit = installAcceptedBatch()
+    useGenerationStore.setState({
+      systemStats: {
+        cpu_pct: 10,
+        ram_used_gb: 8,
+        ram_total_gb: 32,
+        ram_pct: 25,
+        gpu_pct: 20,
+        vram_used_gb: 9.0,
+        vram_total_gb: 16.0,
+        vram_free_gb: 5.0,
+        vram_guard_free_gb: 3.0,
+        vram_hold_reason: 'external',
+        vram_safe: false,
+        vram_min_free_gb: 6.0,
+        vram_guard_enabled: true,
+        vram_pct: 56.25,
+        ts: Date.now(),
+      },
+    })
+
+    const { result } = renderHook(() => useGenerateAction(mockWorkflow), { wrapper })
+
+    let generatePromise: Promise<void> | null = null
+    act(() => {
+      generatePromise = result.current.handleGenerate()
+    })
+    await generatePromise
+
+    const waitStatus = useGenerationStore.getState().vramWaitStatus
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(waitStatus?.isWaiting).toBe(true)
+    expect(waitStatus?.freeGb).toBe(3.0)
+    expect(waitStatus?.requiredGb).toBe(6.0)
+    expect(waitStatus?.reason).toBe('external')
+
+    act(() => {
+      useGenerationStore.getState().cancelVramWait()
+    })
+  })
+
+  it('[REQ-432/AC-2] unattributed hold uses distinct warning toast text', async () => {
+    const runCase = async (extra: Record<string, unknown>) => {
+      vi.useFakeTimers()
+      installAcceptedBatch()
+      const setErrorToastMock = vi.fn()
+      useGenerationStore.setState({
+        setErrorToast: setErrorToastMock,
+        systemStats: {
+          cpu_pct: 10,
+          ram_used_gb: 8,
+          ram_total_gb: 32,
+          ram_pct: 25,
+          gpu_pct: 20,
+          vram_used_gb: 9.0,
+          vram_total_gb: 16.0,
+          vram_free_gb: 7.0,
+          vram_safe: false,
+          vram_min_free_gb: 8.0,
+          vram_guard_enabled: true,
+          vram_pct: 56.25,
+          ts: Date.now(),
+          ...extra,
+        },
+      })
+      const { result, unmount } = renderHook(() => useGenerateAction(mockWorkflow), { wrapper })
+      let generatePromise: Promise<void> | null = null
+      act(() => {
+        generatePromise = result.current.handleGenerate()
+      })
+      await generatePromise
+      act(() => {
+        vi.advanceTimersByTime(10000)
+      })
+      const message = (setErrorToastMock.mock.calls[0]?.[0] as { message: string } | undefined)?.message
+      act(() => {
+        useGenerationStore.getState().cancelVramWait()
+      })
+      unmount()
+      vi.useRealTimers()
+      return message
+    }
+
+    const unattributedMessage = await runCase({ vram_hold_reason: 'unattributed' })
+    expect(unattributedMessage).toContain('占有元を判別できません')
+
+    const legacyMessage = await runCase({})
+    expect(legacyMessage).toContain('他プロセスの終了待機中')
+    expect(legacyMessage).not.toContain('占有元を判別できません')
+  })
+
   it('AC-4: safely cancels wait and returns to Ready state when cancelVramWait is invoked', async () => {
     installAcceptedBatch()
     useGenerationStore.setState({

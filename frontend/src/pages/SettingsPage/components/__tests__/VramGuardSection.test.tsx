@@ -205,9 +205,15 @@ describe('VramGuardSection', () => {
       }),
       { numRuns: 300 },
     )
-    for (const s of ['abc', 'NaN', '', null]) expect(readStoredVramLimit(s)).toBe(4)
+    for (const s of ['abc', 'NaN', '', null]) expect(readStoredVramLimit(s)).toBe(6)
     expect(readStoredVramLimit('-5')).toBe(2)
     expect(readStoredVramLimit('999')).toBe(14)
+  })
+
+  it('[REQ-432/AC-2] fallback threshold for empty or invalid stored value equals backend default 6.0 GB', () => {
+    expect(VRAM_LIMIT_DEFAULT).toBe(6)
+    for (const s of ['', '   ', 'abc', 'NaN', 'Infinity', null]) expect(readStoredVramLimit(s)).toBe(6)
+    expect(readStoredVramLimit('8')).toBe(8)
   })
 
   it('[REQ-365/AC-10] LS_KEYS.VRAM_GUARD_LIMIT equals the literal key', () => {

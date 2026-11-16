@@ -6,6 +6,7 @@ import io
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -2666,3 +2667,202 @@ def test_collect_and_replace_only_touch_exact_reference_tokens(graph: dict[str, 
         for name, value in node["inputs"].items():
             ref_id = _expected_ref_id(value)
             assert replaced[key]["inputs"][name] == (resolved[ref_id] if ref_id else value)
+
+
+_RESIDUAL_STATUS: dict[str, Any] = {
+    "vram_guard_enabled": True,
+    "vram_min_free_gb": 6.0,
+    "vram_free_gb": 5.3,
+    "vram_guard_free_gb": 13.5,
+    "vram_hold_reason": None,
+    "vram_measure_source": "comfyui",
+    "vram_safe": True,
+}
+_EXTERNAL_HOLD_STATUS: dict[str, Any] = {
+    "vram_guard_enabled": True,
+    "vram_min_free_gb": 6.0,
+    "vram_free_gb": 2.0,
+    "vram_guard_free_gb": 2.5,
+    "vram_hold_reason": "external",
+    "vram_measure_source": "comfyui",
+    "vram_safe": False,
+}
+
+
+def _cached_held_status() -> dict[str, Any]:
+    return {"vram_guard_enabled": True, "vram_free_gb": 5.3, "vram_min_free_gb": 6.0}
+
+
+class _ProbeRecorder:
+    def __init__(self, status: dict[str, Any], error: Exception | None = None) -> None:
+        self.status = status
+        self.error = error
+        self.calls: list[float] = []
+
+    async def __call__(self) -> dict[str, Any]:
+        self.calls.append(asyncio.get_running_loop().time())
+        if self.error is not None:
+            raise self.error
+        return dict(self.status)
+
+
+def _probe_service(
+    repository: MemoryRepository,
+    bridge: FakeBridge,
+    probe: Any,
+    *,
+    vram_status: Any = None,
+    clock: Any = None,
+    recheck: float = 0.0,
+) -> GenerationService:
+    return GenerationService(
+        repository,
+        bridge,
+        clock=clock or (lambda: "2026-10-10T00:00:00Z"),
+        vram_status=vram_status or (lambda: {}),
+        publish=None,
+        vram_probe=probe,
+        vram_recheck_seconds=recheck,
+    )
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-1")
+async def test_own_residual_only_does_not_hold_dispatch() -> None:
+    """[REQ-432/AC-1] Own-session residual VRAM must not hold dispatch when guard_free is sufficient."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    probe = _ProbeRecorder(_RESIDUAL_STATUS)
+    service = _probe_service(repository, bridge, probe, vram_status=_cached_held_status)
+    await service.start()
+    try:
+        await service.accept(_payload())
+        await _wait_until(lambda: len(bridge.submissions) == 1, timeout=1.0)
+        assert len(bridge.submissions) == 1
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-1")
+async def test_consecutive_generations_with_resident_model_never_wait() -> None:
+    """[REQ-432/AC-1] Consecutive generations with a resident model are never held."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    probe = _ProbeRecorder(_RESIDUAL_STATUS)
+    service = _probe_service(repository, bridge, probe, vram_status=_cached_held_status)
+    await service.start()
+    try:
+        first = await service.accept(_payload())
+        await _wait_until(lambda: len(bridge.submissions) == 1, timeout=1.0)
+        repository.transition(first["job_ids"][0], "succeeded", finished_at="2026-10-10T00:00:01Z")
+        second = await service.accept(_payload())
+        job2 = second["job_ids"][0]
+        await _wait_until(lambda: len(bridge.submissions) == 2, timeout=1.0)
+        assert len(bridge.submissions) == 2
+        assert job2 not in service._vram_wait_started
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-2")
+async def test_external_hold_logs_reason_and_remains_cancellable(caplog: pytest.LogCaptureFixture) -> None:
+    """[REQ-432/AC-2] An external hold logs reason=external once and stays cancellable without upstream POST."""
+    caplog.set_level(logging.WARNING, logger="app.services.generation_service")
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    probe = _ProbeRecorder(_EXTERNAL_HOLD_STATUS)
+    now = {"value": datetime(2026, 10, 10, tzinfo=timezone.utc)}
+    service = _probe_service(repository, bridge, probe, clock=lambda: now["value"])
+    await service.start()
+    try:
+        accepted = await service.accept(_payload())
+        job_id = accepted["job_ids"][0]
+        await _wait_until(lambda: job_id in service._vram_wait_started, timeout=1.0)
+        now["value"] += timedelta(seconds=11)
+        await _wait_until(
+            lambda: any("reason=external" in r.getMessage() for r in caplog.records), timeout=1.0
+        )
+        await asyncio.sleep(0.3)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "reason=external" in r.getMessage()]
+        assert len(warnings) == 1
+        assert bridge.submissions == []
+        result = await service.cancel(job_id)
+        assert result.outcome == "cancelled"
+        assert bridge.submissions == []
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-4")
+async def test_dispatch_uses_probe_value_at_decision_time() -> None:
+    """[REQ-432/AC-4] The decision uses the fresh probe value, not the synchronous cached status."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    sync_calls: list[int] = []
+
+    def held_status() -> dict[str, Any]:
+        sync_calls.append(1)
+        return {"vram_guard_enabled": True, "vram_free_gb": 1.0, "vram_min_free_gb": 2.0}
+
+    probe = _ProbeRecorder(_RESIDUAL_STATUS)
+    service = _probe_service(repository, bridge, probe, vram_status=held_status)
+    await service.start()
+    try:
+        await service.accept(_payload())
+        await _wait_until(lambda: len(bridge.submissions) == 1, timeout=1.0)
+        assert len(bridge.submissions) == 1
+        assert sync_calls == []
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-4")
+async def test_held_job_rechecks_fresh_probe_at_bounded_interval() -> None:
+    """[REQ-432/AC-4] A held job re-probes no more often than the recheck interval and dispatches once when safe."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    probe = _ProbeRecorder(_EXTERNAL_HOLD_STATUS)
+    service = _probe_service(repository, bridge, probe, recheck=0.3)
+    await service.start()
+    try:
+        await service.accept(_payload())
+        await asyncio.sleep(1.0)
+        assert bridge.submissions == []
+        assert len(probe.calls) >= 2
+        gaps = [b - a for a, b in zip(probe.calls, probe.calls[1:])]
+        assert all(gap >= 0.3 - 0.05 for gap in gaps), gaps
+        probe.status = _RESIDUAL_STATUS
+        await _wait_until(lambda: len(bridge.submissions) == 1, timeout=1.0)
+        await asyncio.sleep(0.5)
+        assert len(bridge.submissions) == 1
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-432")
+@getattr(pytest.mark, "AC-4")
+async def test_probe_failure_does_not_block_dispatch(caplog: pytest.LogCaptureFixture) -> None:
+    """[REQ-432/AC-4] A failing probe is treated as unmeasurable and does not block dispatch."""
+    caplog.set_level(logging.WARNING, logger="app.services.generation_service")
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    probe = _ProbeRecorder({}, error=RuntimeError("probe boom"))
+    service = _probe_service(repository, bridge, probe)
+    await service.start()
+    try:
+        await service.accept(_payload())
+        await _wait_until(lambda: len(bridge.submissions) == 1, timeout=1.0)
+        assert len(bridge.submissions) == 1
+        assert any(r.levelno == logging.WARNING for r in caplog.records)
+    finally:
+        await service.stop()

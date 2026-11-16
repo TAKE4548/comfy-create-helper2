@@ -330,6 +330,23 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     })
   })
 
+  it('[REQ-432/AC-2] status bar distinguishes external and unattributed wait reasons', () => {
+    useGenerationStore.setState({
+      vramWaitStatus: { isWaiting: true, freeGb: 3.0, requiredGb: 6.0, waitDurationSec: 3, reason: 'unattributed' },
+    })
+    const first = renderWithQueryClient(<DesktopLayout state={createMockState() as any} />)
+    expect(screen.getByText('VRAM解放待ち（占有元を判別できません）')).toBeInTheDocument()
+    expect(screen.queryByText('VRAM解放待ち（他プロセスの終了待機中）')).toBeNull()
+    first.unmount()
+
+    useGenerationStore.setState({
+      vramWaitStatus: { isWaiting: true, freeGb: 3.0, requiredGb: 6.0, waitDurationSec: 3, reason: 'external' },
+    })
+    renderWithQueryClient(<DesktopLayout state={createMockState() as any} />)
+    expect(screen.getByText('VRAM解放待ち（他プロセスの終了待機中）')).toBeInTheDocument()
+    expect(screen.queryByText('VRAM解放待ち（占有元を判別できません）')).toBeNull()
+  })
+
   it('[REQ-383/AC-12] clicking tile in desktop preview invokes onOpenModal', () => {
     const state = createMockState()
     state.displayImages = ['img-1', 'img-2']

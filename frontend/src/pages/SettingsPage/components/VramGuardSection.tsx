@@ -17,7 +17,7 @@ export interface VramGuardSectionProps {
 
 export const VRAM_LIMIT_MIN = 2.0
 export const VRAM_LIMIT_MAX = 14.0
-export const VRAM_LIMIT_DEFAULT = 4.0
+export const VRAM_LIMIT_DEFAULT = 6.0
 export const VRAM_APPROACH_MARGIN_GB = 1.0
 
 export function readStoredVramLimit(raw: string | null): number {

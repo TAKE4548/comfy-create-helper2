@@ -335,7 +335,7 @@ export const DesktopLayout = ({
           <div className="flex items-center gap-2">
             <AlertTriangle size={14} className="text-yellow-400 animate-pulse flex-shrink-0" />
             <span className="font-semibold text-yellow-300">
-              VRAM解放待ち（他プロセスの終了待機中）
+              {vramWaitStatus.reason === 'unattributed' ? 'VRAM解放待ち（占有元を判別できません）' : 'VRAM解放待ち（他プロセスの終了待機中）'}
             </span>
             <span className="text-zinc-600">|</span>
             <span className="text-zinc-400 ux-numeric">

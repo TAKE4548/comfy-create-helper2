@@ -322,6 +322,22 @@ class ComfyGenerationBridge:
             raise ValueError("comfy_url must use http or https")
         return urlunsplit((scheme, parsed.netloc, f"{parsed.path.rstrip('/')}/ws", f"clientId={quote(self.client_id, safe='')}", ""))
 
+    async def system_stats(self) -> dict[str, Any] | None:
+        """GET /system_stats (timeout=1.0). Any failure, non-JSON or non-object -> None.
+
+        Deliberately bypasses ``_request`` so the upstream health state
+        (``_http_ready`` / ``_failure_since``) is never modified.
+        """
+        try:
+            response = await self._http.request("GET", "/system_stats", timeout=1.0)
+            response.raise_for_status()
+            payload = response.json()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         try:
             response = await self._http.request(method, path, **kwargs)

@@ -78,12 +78,15 @@ async def lifespan(app: FastAPI):
     logger.info("Prompt Surgeon API started.")
     repository = GenerationRepository(SessionLocal)
     bridge = ComfyGenerationBridge(settings.comfy_url)
+    resource_monitor.configure_comfy_stats(bridge.system_stats)
     service = GenerationService(
         repository,
         bridge,
         clock=lambda: datetime.now(timezone.utc),
         vram_status=resource_monitor.get_vram_status,
         publish=ws_router.manager.publish_generation,
+        vram_probe=resource_monitor.sample_guard_status,
+        vram_recheck_seconds=1.0,
     )
     app.state.generation_repository = repository
     app.state.generation_bridge = bridge
@@ -114,6 +117,7 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Ref image GC task ended with error: {e}")
         if monitor_started:
             await resource_monitor.stop()
+        resource_monitor.configure_comfy_stats(None)
         if bridge_started:
             await bridge.stop()
         if service_started:

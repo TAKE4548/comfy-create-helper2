@@ -969,6 +969,23 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(vramBanner.className).not.toContain('z-45')
     })
 
+    it('[REQ-432/AC-2] vram wait banner distinguishes unattributed reason and keeps legacy label otherwise', () => {
+      useGenerationStore.setState({
+        vramWaitStatus: { isWaiting: true, freeGb: 3.0, requiredGb: 6.0, waitDurationSec: 3, reason: 'unattributed' },
+      })
+      const first = render(<MobileLayout state={createMockState()} />)
+      expect(within(screen.getByTestId('mobile-vram-wait-banner')).getByText('VRAM解放待ち（占有元未確認）')).toBeInTheDocument()
+      first.unmount()
+
+      useGenerationStore.setState({
+        vramWaitStatus: { isWaiting: true, freeGb: 3.0, requiredGb: 6.0, waitDurationSec: 3 },
+      })
+      render(<MobileLayout state={createMockState()} />)
+      const banner = screen.getByTestId('mobile-vram-wait-banner')
+      expect(within(banner).getByText('VRAM解放待ち（待機中）')).toBeInTheDocument()
+      expect(within(banner).queryByText('VRAM解放待ち（占有元未確認）')).toBeNull()
+    })
+
     it('[REQ-371/AC-8] hides action bar with pointer-events-none when input is focused, restoring flex on blur', () => {
       const state = createMockState()
       const { container } = render(<MobileLayout state={state} />)
