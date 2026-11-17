@@ -287,16 +287,22 @@ export const ParamPanel = ({
               <button
                 id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                 type="button"
+                role="switch"
+                aria-checked={paramValues[m.role!] === 'true'}
+                aria-label={m.display_name || m.role!}
+                data-radius-exempt
+                data-tap-target-exempt
                 disabled={isSyncedSlave}
                 onClick={() => {
                   const currentVal = paramValues[m.role!] === 'true'
                   setParamValues({ ...paramValues, [m.role!]: currentVal ? 'false' : 'true' })
                 }}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                   paramValues[m.role!] === 'true' ? 'bg-accent-green' : 'bg-zinc-700'
                 }`}
               >
                 <span
+                  data-radius-exempt
                   className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                     paramValues[m.role!] === 'true' ? 'translate-x-4' : 'translate-x-0'
                   }`}
@@ -326,16 +332,22 @@ export const ParamPanel = ({
                     <button
                       id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                       type="button"
+                      role="switch"
+                      aria-checked={paramValues[m.role!] === 'true'}
+                      aria-label={m.display_name || m.role!}
+                      data-radius-exempt
+                      data-tap-target-exempt
                       disabled={isSyncedSlave}
                       onClick={() => {
                         const currentVal = paramValues[m.role!] === 'true'
                         setParamValues({ ...paramValues, [m.role!]: currentVal ? 'false' : 'true' })
                       }}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                         paramValues[m.role!] === 'true' ? 'bg-accent-green' : 'bg-zinc-700'
                       }`}
                     >
                       <span
+                        data-radius-exempt
                         className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                           paramValues[m.role!] === 'true' ? 'translate-x-4' : 'translate-x-0'
                         }`}
@@ -461,12 +473,18 @@ export const ParamPanel = ({
                     <button
                       id={`param-sync-toggle-${g.id}${mobile ? '-mobile' : ''}`}
                       type="button"
+                      role="switch"
+                      aria-checked={g.is_enabled}
+                      aria-label={g.name}
+                      data-radius-exempt
+                      data-tap-target-exempt
                       onClick={() => onToggleParamSync?.(g.id, !g.is_enabled)}
-                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                         g.is_enabled ? 'bg-accent-green' : 'bg-zinc-700'
                       }`}
                     >
                       <span
+                        data-radius-exempt
                         className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                           g.is_enabled ? 'translate-x-3' : 'translate-x-0'
                         }`}
@@ -516,12 +534,18 @@ export const ParamPanel = ({
                     <button
                       id={`bypass-toggle-${p.id}${mobile ? '-mobile' : ''}`}
                       type="button"
+                      role="switch"
+                      aria-checked={p.is_enabled}
+                      aria-label={p.name}
+                      data-radius-exempt
+                      data-tap-target-exempt
                       onClick={() => onToggleBypass?.(p.id, !p.is_enabled)}
-                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                         p.is_enabled ? 'bg-red-500' : 'bg-zinc-700'
                       }`}
                     >
                       <span
+                        data-radius-exempt
                         className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                           p.is_enabled ? 'translate-x-3' : 'translate-x-0'
                         }`}

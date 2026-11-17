@@ -325,7 +325,7 @@ export function HistoryPage() {
                   <span>セリフ一括変換</span>
                   {activeBatchJob &&
                     (activeBatchJob.status === 'processing' || activeBatchJob.status === 'pending') && (
-                      <span className="ml-1 w-2 h-2 rounded-full bg-[#7C6FDD] animate-ping" />
+                      <span data-radius-exempt className="ml-1 w-2 h-2 shrink-0 rounded-full bg-[#7C6FDD] animate-ping" />
                     )}
                 </button>
 

@@ -277,6 +277,8 @@ export function SystemStatusBadge(props: SystemStatusBadgeProps): React.JSX.Elem
           tabIndex={0}
           data-testid="system-status-badge"
           data-generation-available={String(view.generationAvailable)}
+          data-radius-exempt
+          data-tap-target-exempt
           aria-label={`System ${view.label}; ${details}`}
           title={details}
           onClick={() => setIsOpen((prev) => !prev)}
@@ -286,7 +288,7 @@ export function SystemStatusBadge(props: SystemStatusBadgeProps): React.JSX.Elem
               setIsOpen((prev) => !prev)
             }
           }}
-          className={`inline-block shrink-0 w-[7px] h-[7px] rounded-full cursor-pointer touch-manipulation ${dotColors[view.label]}`}
+          className={`relative inline-block shrink-0 w-[7px] h-[7px] rounded-full cursor-pointer touch-manipulation before:absolute before:-inset-[19px] before:content-[''] ${dotColors[view.label]}`}
         />
         {dropdown}
       </div>
@@ -308,6 +310,8 @@ export function SystemStatusBadge(props: SystemStatusBadgeProps): React.JSX.Elem
         tabIndex={0}
         data-testid="system-status-badge"
         data-generation-available={String(view.generationAvailable)}
+        data-radius-exempt
+        data-tap-target-exempt
         aria-label={`System ${view.label}; ${details}`}
         title={details}
         onClick={() => setIsOpen((prev) => !prev)}
@@ -317,9 +321,9 @@ export function SystemStatusBadge(props: SystemStatusBadgeProps): React.JSX.Elem
             setIsOpen((prev) => !prev)
           }
         }}
-        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium leading-4 cursor-pointer touch-manipulation ${badgeColors[view.label]}`}
+        className={`relative inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium leading-4 cursor-pointer touch-manipulation before:absolute before:-inset-y-3 before:-inset-x-1 before:content-[''] ${badgeColors[view.label]}`}
       >
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+        <span data-radius-exempt className="inline-block shrink-0 w-1.5 h-1.5 rounded-full bg-current opacity-80" />
         <span>{view.label}</span>
         {variant === 'full' && props.managerAvailable && props.manager && (
           <span className="hidden border-l border-current/20 pl-1.5 text-[9px] font-normal sm:inline">

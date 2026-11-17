@@ -397,4 +397,12 @@ describe('ServiceConnectionCard', () => {
     await waitFor(() => expect(button).toBeEnabled())
     expect(screen.queryByText(/解放要求を受け付けました/)).toBeNull()
   })
+
+  it('[REQ-433/AC-2] protects circular status lamp with data-radius-exempt and shrink-0', () => {
+    setup()
+    const row = screen.getByRole('listitem', { name: 'ComfyUI' })
+    const lamp = within(row).getByRole('img', { name: '死活: 停止中' })
+    expect(lamp).toHaveAttribute('data-radius-exempt')
+    expect(lamp).toHaveClass('shrink-0', 'rounded-full')
+  })
 })

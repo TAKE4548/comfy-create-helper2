@@ -232,7 +232,7 @@ export function ConnectionStatus({ label, url }: { label: string; url: string })
       </div>
       <div className="flex items-center gap-2">
         {status !== 'idle' && (
-          <div className={`w-2 h-2 rounded-full ${status === 'checking' ? 'bg-zinc-500 animate-pulse' : status === 'ok' ? 'bg-accent-green' : 'bg-red-500'}`} />
+          <div role="img" aria-label={status} data-radius-exempt className={`w-2 h-2 shrink-0 rounded-full ${status === 'checking' ? 'bg-zinc-500 animate-pulse' : status === 'ok' ? 'bg-accent-green' : 'bg-red-500'}`} />
         )}
         <button id={`check-${label.replace(/\s+/g, '-').toLowerCase()}`} onClick={check}
           className="text-xs px-2 py-1 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all">

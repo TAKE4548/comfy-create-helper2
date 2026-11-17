@@ -161,7 +161,7 @@ export const DatasetStudioPage: React.FC = () => {
             data-testid="autosave-status"
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-950/60 text-amber-300 border border-amber-800/80"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
             変更を保存中...
           </span>
         )
@@ -172,7 +172,7 @@ export const DatasetStudioPage: React.FC = () => {
             data-testid="autosave-status"
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/80"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+            <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-indigo-400" />
             未保存（下書き保持）
           </span>
         )
@@ -182,7 +182,7 @@ export const DatasetStudioPage: React.FC = () => {
             data-testid="autosave-status"
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-950/60 text-rose-300 border border-rose-800/80"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+            <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-rose-400" />
             保存失敗（下書き保持中）
           </span>
         )
@@ -192,14 +192,14 @@ export const DatasetStudioPage: React.FC = () => {
             data-testid="autosave-status"
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-800/80"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400" />
             自動保存済み
           </span>
         )
       default:
         return (
           <span data-testid="autosave-status" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/80">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+            <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-indigo-400" />
             未保存（下書き保持）
           </span>
         )

@@ -338,7 +338,7 @@ export function WorkflowDiffReplaceModal({
                 <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-3.5 flex flex-col gap-2">
                   <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 pb-2">
                     <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-zinc-400" />
+                      <span data-radius-exempt className="w-2 h-2 shrink-0 rounded-full bg-zinc-400" />
                       旧ワークフロー接続 (Old)
                     </span>
                     <span className="text-xs font-mono text-zinc-500">
@@ -410,7 +410,7 @@ export function WorkflowDiffReplaceModal({
                 <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-3.5 flex flex-col gap-2">
                   <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 pb-2">
                     <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${selectedMigration.new_node_id ? 'bg-blue-500' : 'bg-rose-500'}`} />
+                      <span data-radius-exempt className={`w-2 h-2 shrink-0 rounded-full ${selectedMigration.new_node_id ? 'bg-blue-500' : 'bg-rose-500'}`} />
                       新ワークフロー接続 (New)
                     </span>
                     <span className="text-xs font-mono text-zinc-500">

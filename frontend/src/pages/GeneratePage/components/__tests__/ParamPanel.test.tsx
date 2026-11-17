@@ -423,3 +423,97 @@ describe('ParamPanel image input (REQ-427)', () => {
     field.querySelectorAll('button').forEach((b) => expect(b).toBeDisabled())
   })
 })
+
+describe('ParamPanel Component - Toggle Switch Standardization [REQ-433]', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('[REQ-433/AC-3][REQ-433/AC-4] renders all 4 ON/OFF toggles with role="switch", aria-checked, aria-label, data-radius-exempt, data-tap-target-exempt, touch-manipulation, and hit-slop classes', () => {
+    const setParamValues = vi.fn()
+    const onToggleParamSync = vi.fn()
+    const onToggleBypass = vi.fn()
+
+    render(
+      <ParamPanel
+        paramMappings={[
+          { id: 1, role: 'use_hires', display_name: 'Hires Fix', input_type: 'boolean' },
+          { id: 2, role: 'custom_flag', display_name: 'Custom Flag', input_type: 'my_bool' },
+          { id: 3, role: 'Sampler_Seed', display_name: 'Sampler Seed', input_type: 'int' },
+        ]}
+        paramTypeMasters={[
+          { id: 1, name: 'my_bool', display_name: 'My Bool', widget_type: 'boolean' } as any,
+        ]}
+        paramValues={{ use_hires: 'true', custom_flag: 'false', Sampler_Seed: '123' }}
+        setParamValues={setParamValues}
+        batchSize={1}
+        setBatchSize={vi.fn()}
+        seedMode="random"
+        setSeedMode={vi.fn()}
+        seed={123}
+        setSeed={vi.fn()}
+        paramSyncGroups={[
+          { id: 10, workflow_id: 1, name: 'Sampler Sync', is_enabled: true, master_role: 'a', slave_roles: [], created_at: '2026-08-01T00:00:00Z' },
+        ]}
+        onToggleParamSync={onToggleParamSync}
+        bypassProfiles={[
+          { id: 20, name: 'Face Restore Bypass', is_enabled: false },
+        ]}
+        onToggleBypass={onToggleBypass}
+      />,
+    )
+
+    const switches = screen.getAllByRole('switch')
+    expect(switches).toHaveLength(4)
+
+    const hiresSwitch = screen.getByRole('switch', { name: 'Hires Fix' })
+    expect(hiresSwitch).toHaveAttribute('aria-checked', 'true')
+    expect(hiresSwitch).toHaveAttribute('data-radius-exempt')
+    expect(hiresSwitch).toHaveAttribute('data-tap-target-exempt')
+    expect(hiresSwitch.className).toContain('touch-manipulation')
+    expect(hiresSwitch.className).toContain('before:-inset-x-2')
+    expect(hiresSwitch.className).toContain('before:-inset-y-3.5')
+    expect(hiresSwitch.querySelector('span')).toHaveAttribute('data-radius-exempt')
+
+    const customSwitch = screen.getByRole('switch', { name: 'Custom Flag' })
+    expect(customSwitch).toHaveAttribute('aria-checked', 'false')
+    expect(customSwitch).toHaveAttribute('data-radius-exempt')
+    expect(customSwitch).toHaveAttribute('data-tap-target-exempt')
+    expect(customSwitch.className).toContain('touch-manipulation')
+    expect(customSwitch.className).toContain('before:-inset-x-2')
+    expect(customSwitch.className).toContain('before:-inset-y-3.5')
+    expect(customSwitch.querySelector('span')).toHaveAttribute('data-radius-exempt')
+
+    const syncSwitch = screen.getByRole('switch', { name: 'Sampler Sync' })
+    expect(syncSwitch).toHaveAttribute('aria-checked', 'true')
+    expect(syncSwitch).toHaveAttribute('data-radius-exempt')
+    expect(syncSwitch).toHaveAttribute('data-tap-target-exempt')
+    expect(syncSwitch.className).toContain('touch-manipulation')
+    expect(syncSwitch.className).toContain('before:-inset-x-2')
+    expect(syncSwitch.className).toContain('before:-inset-y-3.5')
+    expect(syncSwitch.querySelector('span')).toHaveAttribute('data-radius-exempt')
+
+    const bypassSwitch = screen.getByRole('switch', { name: 'Face Restore Bypass' })
+    expect(bypassSwitch).toHaveAttribute('aria-checked', 'false')
+    expect(bypassSwitch).toHaveAttribute('data-radius-exempt')
+    expect(bypassSwitch).toHaveAttribute('data-tap-target-exempt')
+    expect(bypassSwitch.className).toContain('touch-manipulation')
+    expect(bypassSwitch.className).toContain('before:-inset-x-2')
+    expect(bypassSwitch.className).toContain('before:-inset-y-3.5')
+    expect(bypassSwitch.querySelector('span')).toHaveAttribute('data-radius-exempt')
+
+    // Push-button toggle (#seed-toggle) must remain a normal button, not role="switch"
+    const seedToggle = document.getElementById('seed-toggle')
+    expect(seedToggle).toBeInTheDocument()
+    expect(seedToggle).not.toHaveAttribute('role', 'switch')
+
+    // Interactions
+    fireEvent.click(hiresSwitch)
+    expect(setParamValues).toHaveBeenCalledWith(expect.objectContaining({ use_hires: 'false' }))
+    fireEvent.click(syncSwitch)
+    expect(onToggleParamSync).toHaveBeenCalledWith(10, false)
+    fireEvent.click(bypassSwitch)
+    expect(onToggleBypass).toHaveBeenCalledWith(20, true)
+  })
+})

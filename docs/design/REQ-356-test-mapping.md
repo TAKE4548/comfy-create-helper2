@@ -8,12 +8,12 @@
 | 項目 | 件数 | 備考 |
 |---|---|---|
 | Backend テストファイル数 | 81 | `backend/tests/**/*.py` |
-| Frontend テストファイル数 | 270 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 3685 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 1386 | `REQ-xxx` 関連 |
-| PBI 紐づけなしテスト数 | 2299 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
+| Frontend テストファイル数 | 273 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
+| 抽出テストケース総数 | 3775 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 1475 | `REQ-xxx` 関連 |
+| PBI 紐づけなしテスト数 | 2300 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
-| テスト名規約違反数 (AC-15) | 22 | `[REQ-xxx/AC-n]` 未準拠 |
+| テスト名規約違反数 (AC-15) | 24 | `[REQ-xxx/AC-n]` 未準拠 |
 
 ## 2. ファイル名規約違反一覧 (移行対象: AC-1)
 
@@ -144,6 +144,20 @@
 | `backend/tests/governance/test_vram_guard.py` | test_vram_status_dynamic_threshold: [REQ-260/AC-3] Test dynamic threshold effect on safe flag. | AC-3 | PASS |
 | `backend/tests/governance/test_vram_guard.py` | test_ws_broadcast_includes_vram_fields: [REQ-260/AC-4] Verify /api/ws includes vram_free_gb, vram_safe, and vram_min_free_gb in SYSTEM_STATS. | AC-4 | PASS |
 | `backend/tests/governance/test_vram_guard.py` | test_vram_recovered_broadcast_event: [REQ-260/AC-5] Verify VRAM_RECOVERED event is broadcast when transitioning from unsafe to safe. | AC-5 | PASS |
+
+### REQ-265 (計 9 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/generateSnapshotRestore.spec.ts` | [REQ-265/AC-5] Desktop: opens SnapshotRestoreModal from dedicated button and snapshot card, previews details, and restores preset | AC-5 | PASS |
+| `frontend/e2e/generateSnapshotRestore.spec.ts` | [REQ-265/AC-6] Mobile (390x844): dedicated button fits without horizontal overflow and restores snapshot via sheet modal | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/SnapshotRestoreModal.test.tsx` | [REQ-265/AC-3] サムネイルグリッドと選択中スナップショットの簡易プレビューを表示する | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/SnapshotRestoreModal.test.tsx` | [REQ-265/AC-1] サムネイル選択や詳細取得のみでは onRestore を呼ばず、詳細取得失敗時は role="alert" を表示する | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/SnapshotRestoreModal.test.tsx` | [REQ-265/AC-4] 「アクティブプリセットに復元」押下時のみ onRestore(selectedId) を呼び、成功(true)時のみ onClose する。復元中は disabled かつ連打抑止する | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/SnapshotRestoreModal.test.tsx` | [REQ-265/AC-5] 復元失敗(false)時はモーダルを閉じずにエラーを表示する | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/SnapshotRestoreModal.test.tsx` | [REQ-265/AC-5] キャンセル・閉じる・Escape・バックドロップ押下で onRestore を呼ばず onClose する | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx` | [REQ-265/AC-1] renders dedicated snapshot restore button only on snapshots tab and opens modal on click (desktop & mobile) | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx` | [REQ-265/AC-2] calls gallery.handleSnapshotClick with snapshot id when snapshot card is clicked | AC-2 | PASS |
 
 ### REQ-267 (計 18 件)
 
@@ -1397,6 +1411,33 @@
 | `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/RT-2] safely resets position on touchCancel without triggering onClose | - | VIOLATION |
 | `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/RT-3] respects disableSwipeToClose prop even on mobile viewports | - | VIOLATION |
 
+### REQ-412 (計 22 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-1] the real pointer moves from the monitor through the bridge to the free-memory button and it is pressable ${tag} | AC-1 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-3][REQ-412/AC-4] idle request is sent once, the button is busy until confirmation, and acceptance wording is shown @1280x800 | AC-3 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-5] executing, queued and unreachable Manager disable the button with a reason @1280x800 | AC-5 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-6] HTTP 504 and a dropped connection show 要求結果未確認 without resending @1280x800 | AC-6 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-7] on a short viewport the card scrolls internally and the free-memory button is reachable at header + 6px @1024x768 | AC-7 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-1] leaving the card from the disabled button closes the card @1280x800 | AC-1 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-412/AC-3] a header request while Settings is already sending is not sent twice @1280x800 | AC-3 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-412/AC-2] tapping the VRAM pill shows the free-memory button and a tap sends one request @${w}x667 | AC-2 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-412/AC-7] the free-memory section is the last item of the mobile overlay and is reachable on a 360px-high viewport | AC-7 | PASS |
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-412/AC-1] hover card shows the ComfyUI free-memory button as its last section and stays open when the pointer moves onto it | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-412/AC-2] mobile overlay shows the free-memory button as its last section and a tap sends the request | AC-2 | PASS |
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-412/AC-3] the header button is disabled with a busy indicator until the response and status refresh finish | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-412/AC-4] acceptance feedback is shown in the panel and survives closing and reopening the card | AC-4 | PASS |
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-412/AC-7] panels keep the header + 6px top and viewport-capped scroll with the new section | AC-7 | PASS |
+| `frontend/src/hooks/__tests__/useComfyFreeMemory.test.ts` | [REQ-412/AC-5] guard property: enabled only for a known idle LISTEN Comfy with no queue and no other operation | AC-5 | PASS |
+| `frontend/src/hooks/__tests__/useComfyFreeMemory.test.ts` | [REQ-412/AC-5] guard reasons follow the existing priority order | AC-5 | PASS |
+| `frontend/src/hooks/__tests__/useComfyFreeMemory.test.ts` | [REQ-412/AC-3] run sends one request while the shared lock is held and ignores re-entry | AC-3 | PASS |
+| `frontend/src/hooks/__tests__/useComfyFreeMemory.test.ts` | [REQ-412/AC-4] accepted response sets the acceptance message without completion wording | AC-4 | PASS |
+| `frontend/src/hooks/__tests__/useComfyFreeMemory.test.ts` | [REQ-412/AC-3] keeps the lock until two fresh status GETs complete (real useManagerStatus) | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-412/AC-3] Settings free-memory uses the shared lock so a concurrent header request is not sent | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-412/AC-5] Settings controls and free-memory are disabled while another tab-local operation holds the lock | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-412/AC-6] Settings shows the unconfirmed message prefixed with 要求結果未確認 | AC-6 | PASS |
+
 ### REQ-413 (計 6 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
@@ -1764,7 +1805,85 @@
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-427/AC-7] disabled slot state excludes the image mapping from generation and keeps raw mappings intact | AC-7 | PASS |
 | ... | *(他 1 件割愛)* | - | - |
 
-### PBI紐づけなし (汎用/ガバナンス) (計 2299 件)
+### REQ-430 (計 4 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-430/AC-1] 1280px and 375px: mapping master title stays visible above stage badges | AC-1 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-430/AC-2] 1280px: long workflow list scrolls internally to match shorter mapping pane | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-430/AC-2] syncs workflow and mapping scroll maxHeight to shorter pane at xl and clears below xl | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx` | [REQ-430/AC-1] separates title and actions from stage badges across viewports and applies listScrollMaxHeight | AC-1 | PASS |
+
+### REQ-431 (計 16 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-1] Mobile 375x812: 3-image carousel follows finger translateX and snaps back below threshold | AC-1 | PASS |
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-2][REQ-431/AC-3] Mobile 375x812: left/right swipe switches images and syncs download href | AC-2 | PASS |
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-4] Mobile 375x812: fullscreen viewer supports horizontal swipe and preserves image on exit | AC-4 | PASS |
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-5] Mobile 375x812: swipe-down closes sheet preserving scroll, and is disabled in fullscreen | AC-5 | PASS |
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-6] Mobile 375x812: gesture direction lock isolates horizontal vs vertical swipes | AC-6 | PASS |
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-431/AC-7] Mobile 375x812: closing sheet after swipe syncs 3-column history grid selection | AC-7 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-1] follows finger on horizontal drag, snaps back below threshold, and switches to older image on left swipe in sheet | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-2] mounts at most 3 images in carousel window and keeps alt text unique | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-3] applies 0.25x damping at boundaries and does not wrap around | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-4] switches images on horizontal swipe in fullscreen while preserving fullscreen mode | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-5] closes sheet on swipe down >= 80px or fast flick, snaps back below threshold, and clamps upward drag | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/AC-6] respects scrollTop > 0, diagonal lock, desktop width >= 768px, single image, touchCancel, and error recovery swipe | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/Bug-1] preserves DOM node identity and transitions directly via absolute-index coordinates on carousel commit | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-431/Bug-2] sets overscrollBehaviorY while open, restores on close, and calls preventDefault on native touchmove except when scrollTop > 0 | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-431/AC-3] syncs download href and save snapshot target after swiping to next image in MobileImageSheet | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-431/AC-7] syncs history 3-column grid selection highlight after swiping and closing MobileImageSheet | AC-7 | PASS |
+
+### REQ-432 (計 29 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/governance/test_vram_guard.py` | test_guard_free_treats_own_torch_reserve_as_reclaimable: [REQ-432/AC-1] guard_free stays within [0, T], never shrinks as the reserve grows, and equals F with no reserve. | AC-1 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_measured_post_generation_residual_is_not_held: [REQ-432/AC-1] Measured post-generation point B (T=16, F=6.76, R=7.216, Rf=0.2, min=6) is safe via comfyui. | AC-1 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_sample_guard_status_excludes_own_residual_with_bridge: [REQ-432/AC-1] With a real bridge returning point B, the host-held residual no longer holds generation. | AC-1 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_external_occupancy_is_held_with_external_reason: [REQ-432/AC-2] Another process holding VRAM (little free, small own reserve) is held as external. | AC-2 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_host_fallback_hold_is_unattributed: [REQ-432/AC-2] Without ComfyUI stats the host value decides and a hold is unattributed. | AC-2 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_hold_reason_invariants: [REQ-432/AC-2] hold_reason is None iff safe; disabled guard is always safe; equality with the threshold is safe. | AC-2 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_parse_comfy_system_stats_rejects_invalid_payloads: [REQ-432/AC-2] Malformed or inconsistent /system_stats payloads parse to None without raising. | AC-2 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_system_stats_broadcast_carries_hold_reason_and_recovery: [REQ-432/AC-2] External occupancy broadcasts hold_reason=external; recovery emits exactly one VRAM_RECOVERED. | AC-2 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_adapter_usage_counts_only_primary_luid: [REQ-432/AC-3] Only samples of the primary LUID (any phys_N, any case) are summed; no match falls back to all. | AC-3 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_measured_two_adapter_instances_use_primary_only: [REQ-432/AC-3] Measured 10734MiB on the primary adapter plus 4000MiB on another counts only the primary. | AC-3 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_adapter_usage_falls_back_to_total_when_primary_unresolved: [REQ-432/AC-3] An unresolved or non-matching primary LUID sums all samples instead of returning 0. | AC-3 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_windows_collect_reports_primary_adapter_usage: [REQ-432/AC-3] collect() reports VRAM usage of the primary adapter only (I/O boundary replaced). | AC-3 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_sample_guard_status_ignores_stale_cache: [REQ-432/AC-4] A stale low cached free value is ignored; each call re-samples host I/O and the provider. | AC-4 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_comfy_stats_timeout_falls_back_to_fresh_host_value: [REQ-432/AC-4] A hanging ComfyUI stats call is abandoned after ~1s and the fresh host value decides. | AC-4 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_adapter_usage_fallback_logs_debug_only_on_first_occurrence: [REQ-432/AC-3] The all-adapter fallback emits exactly one debug log per process, shared by both reasons. | AC-3 | PASS |
+| `backend/tests/governance/test_vram_guard.py` | test_adapter_usage_primary_match_does_not_log_fallback: [REQ-432/AC-3] A primary-LUID match neither logs nor consumes the once-flag. | AC-3 | PASS |
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_system_stats_returns_payload_without_touching_health: [REQ-432/AC-1] A healthy /system_stats object is returned as-is with a 1s timeout and unchanged health state. | AC-1 | PASS |
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_system_stats_faults_return_none_without_touching_health: [REQ-432/AC-2] Any /system_stats failure yields None and leaves the upstream health state untouched. | AC-2 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_own_residual_only_does_not_hold_dispatch: [REQ-432/AC-1] Own-session residual VRAM must not hold dispatch when guard_free is sufficient. | AC-1 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_consecutive_generations_with_resident_model_never_wait: [REQ-432/AC-1] Consecutive generations with a resident model are never held. | AC-1 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_external_hold_logs_reason_and_remains_cancellable: [REQ-432/AC-2] An external hold logs reason=external once and stays cancellable without upstream POST. | AC-2 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_dispatch_uses_probe_value_at_decision_time: [REQ-432/AC-4] The decision uses the fresh probe value, not the synchronous cached status. | AC-4 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_held_job_rechecks_fresh_probe_at_bounded_interval: [REQ-432/AC-4] A held job re-probes no more often than the recheck interval and dispatches once when safe. | AC-4 | PASS |
+| `backend/tests/integration/legacy/test_generation_service.py` | test_probe_failure_does_not_block_dispatch: [REQ-432/AC-4] A failing probe is treated as unmeasurable and does not block dispatch. | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/vramGuardIntegration.test.ts` | [REQ-432/AC-2] external hold exposes reason and guard free value in wait status | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/vramGuardIntegration.test.ts` | [REQ-432/AC-2] unattributed hold uses distinct warning toast text | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx` | [REQ-432/AC-2] status bar distinguishes external and unattributed wait reasons | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-432/AC-2] vram wait banner distinguishes unattributed reason and keeps legacy label otherwise | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/VramGuardSection.test.tsx` | [REQ-432/AC-2] fallback threshold for empty or invalid stored value equals backend default 6.0 GB | AC-2 | PASS |
+
+### REQ-433 (計 9 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/generateMobileGallery.spec.ts` | [REQ-433/AC-3] mobile ParamPanel toggle switches keep pill shape and 44x44 hit slop | AC-3 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-433/AC-2] mobile status lamps render as true circles without square distortion | AC-2 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-433/AC-3] mobile toggle switches render as pill track with circular knob and 44x44 hit target | AC-3 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-433/AC-4] desktop viewports preserve toggle switch and status lamp behavior and accessibility | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-433/AC-2] marks dot, pill, and inner status lamps with data-radius-exempt and shrink-0 | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-433/AC-4] applies data-tap-target-exempt and 44px+ hit-slop classes to dot variant while preserving aria-label | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-433/AC-3][REQ-433/AC-4] renders all 4 ON/OFF toggles with role="switch", aria-checked, aria-label, data-radius-exempt, data-tap-target-exempt, touch-manipulation, and hit-slop classes | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-433/AC-2] protects circular status lamp with data-radius-exempt and shrink-0 | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/VramGuardSection.test.tsx` | [REQ-433/AC-3][REQ-433/AC-4] renders guard toggle with role="switch", aria-checked, aria-label, data-radius-exempt track, and min-w-11 label | AC-3 | PASS |
+
+### PBI紐づけなし (汎用/ガバナンス) (計 2300 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -1868,7 +1987,7 @@
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_special_tokens_preservation | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_chunking_over_max_batch_size | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_non_existent_directory | - | PASS |
-| ... | *(他 2199 件割愛)* | - | - |
+| ... | *(他 2200 件割愛)* | - | - |
 
 ### UNKNOWN (計 1 件)
 

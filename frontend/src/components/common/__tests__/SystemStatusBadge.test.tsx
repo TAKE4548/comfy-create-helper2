@@ -465,4 +465,56 @@ describe('SystemStatusBadge', () => {
       })
     })
   })
+
+  describe('REQ-433: status lamp protection and hit-slop', () => {
+    it('[REQ-433/AC-2] marks dot, pill, and inner status lamps with data-radius-exempt and shrink-0', () => {
+      const { unmount } = render(
+        <SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="dot" />
+      )
+      const dot = screen.getByTestId('system-status-badge')
+      expect(dot).toHaveAttribute('data-radius-exempt')
+      expect(dot.className).toContain('shrink-0')
+      expect(dot.className).toContain('rounded-full')
+      unmount()
+
+      render(
+        <SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="slim" />
+      )
+      const pill = screen.getByTestId('system-status-badge')
+      expect(pill).toHaveAttribute('data-radius-exempt')
+      expect(pill.className).toContain('shrink-0')
+      expect(pill.className).toContain('rounded-full')
+
+      const innerDot = pill.querySelector('span[data-radius-exempt]')
+      expect(innerDot).not.toBeNull()
+      expect(innerDot?.className).toContain('shrink-0')
+      expect(innerDot?.className).toContain('rounded-full')
+    })
+
+    it('[REQ-433/AC-4] applies data-tap-target-exempt and 44px+ hit-slop classes to dot and pill variants while preserving aria-label', () => {
+      const { unmount } = render(
+        <SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="dot" />
+      )
+      const dot = screen.getByTestId('system-status-badge')
+      expect(dot).toHaveAttribute('data-tap-target-exempt')
+      expect(dot.className).toContain('relative')
+      expect(dot.className).toContain('before:absolute')
+      expect(dot.className).toContain('before:-inset-[19px]')
+      expect(dot.className).toContain("before:content-['']")
+      expect(dot.getAttribute('aria-label')).toContain('System READY')
+      unmount()
+
+      render(
+        <SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="slim" />
+      )
+      const pill = screen.getByTestId('system-status-badge')
+      expect(pill).toHaveAttribute('data-tap-target-exempt')
+      expect(pill.className).toContain('relative')
+      expect(pill.className).toContain('before:absolute')
+      expect(pill.className).toContain('before:-inset-y-3')
+      expect(pill.className).toContain('before:-inset-x-1')
+      expect(pill.className).toContain("before:content-['']")
+      expect(pill.getAttribute('aria-label')).toContain('System READY')
+    })
+  })
 })

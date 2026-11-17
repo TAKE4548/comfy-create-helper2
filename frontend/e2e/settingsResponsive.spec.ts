@@ -1335,6 +1335,204 @@ test.describe('Settings responsive E2E', () => {
     await leaveGuard.getByRole('button', { name: '変更を破棄して移動', exact: true }).click();
     await expect(page).toHaveURL(/\/history$/);
   });
+
+  test('[REQ-433/AC-2] mobile status lamps render as true circles without square distortion', async ({ page }) => {
+    await setManagerState({
+      running: [],
+      pending: [],
+      free_delay: 0,
+      free_status: 200,
+      queue_mode: 'normal',
+      comfy_stopped: true,
+    });
+    let failManager = false;
+    await stubApi(page);
+    await page.route((url) => url.port === '8899' && url.pathname.startsWith('/api/'), async (route) => {
+      if (failManager) return route.abort();
+      const original = new URL(route.request().url());
+      const destination = new URL(original.pathname + original.search, managerUrl);
+      const response = await route.fetch({ url: destination.href });
+      await route.fulfill({ response });
+    });
+
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto('/settings#system');
+    await expect(page.locator('#settings-panel-system')).toBeVisible();
+    const assertTrueCircle = async (loc: Locator, maxPx = 16) => {
+      const m = await loc.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return {
+          width: r.width,
+          height: r.height,
+          radius: parseFloat(cs.borderTopLeftRadius),
+          minW: cs.minWidth,
+          tag: el.tagName,
+          cls: el.className,
+        };
+      });
+      expect(m.width, JSON.stringify(m)).toBeGreaterThan(0);
+      expect(m.width, JSON.stringify(m)).toBeLessThanOrEqual(maxPx);
+      expect(Math.abs(m.width - m.height), JSON.stringify(m)).toBeLessThanOrEqual(0.5);
+      expect(m.radius, JSON.stringify(m)).toBeGreaterThanOrEqual(m.width / 2 - 0.5);
+    };
+
+    const serviceSection = page.locator('section[aria-labelledby="service-connections-title"]');
+    await expect(serviceSection.getByRole('img', { name: '死活: 稼働中' }).first()).toBeVisible();
+    await expect(serviceSection.getByRole('img', { name: '死活: 停止中' }).first()).toBeVisible();
+
+    const lamps = serviceSection.locator('[role="img"][aria-label^="死活: "]');
+    const lampCount = await lamps.count();
+    expect(lampCount).toBe(4);
+    for (let i = 0; i < lampCount; i++) {
+      await assertTrueCircle(lamps.nth(i));
+    }
+
+    const headerBadge = page.locator('[data-testid="system-status-badge"]:visible').first();
+    await expect(headerBadge).toBeVisible();
+    const innerDot = headerBadge.locator('span.rounded-full').first();
+    if ((await innerDot.count()) > 0) {
+      await assertTrueCircle(innerDot, 12);
+      const pillMetrics = await headerBadge.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return { height: r.height, radius: parseFloat(cs.borderTopLeftRadius) };
+      });
+      expect(pillMetrics.radius).toBeGreaterThanOrEqual(pillMetrics.height / 2 - 0.5);
+    } else {
+      await assertTrueCircle(headerBadge, 12);
+    }
+    const hitSlop = await headerBadge.evaluate((el) => {
+      const before = getComputedStyle(el, '::before');
+      return { width: parseFloat(before.width), height: parseFloat(before.height) };
+    });
+    expect(hitSlop.width).toBeGreaterThanOrEqual(44);
+    expect(hitSlop.height).toBeGreaterThanOrEqual(44);
+
+    failManager = true;
+    await page.reload();
+    await expect(page.locator('#settings-panel-system')).toBeVisible();
+    await expect(serviceSection.getByRole('img', { name: '死活: 不明' }).first()).toBeVisible();
+    const unknownLamps = serviceSection.locator('[role="img"][aria-label="死活: 不明"]');
+    const unknownCount = await unknownLamps.count();
+    expect(unknownCount).toBe(4);
+    for (let i = 0; i < unknownCount; i++) {
+      await assertTrueCircle(unknownLamps.nth(i));
+    }
+  });
+
+  test('[REQ-433/AC-3] mobile toggle switches render as pill track with circular knob and 44x44 hit target', async ({ page }) => {
+    await openSettings(page, 375, 667, 'system');
+    const toggle = page.getByRole('switch', { name: 'VRAM安全ガードを有効化' });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    const label = toggle.locator('xpath=..');
+    const track = label.locator('div[data-radius-exempt]');
+    await expect(track).toBeVisible();
+
+    const styles = await track.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const after = getComputedStyle(el, '::after');
+      const labelRect = el.parentElement!.getBoundingClientRect();
+      return {
+        trackW: r.width,
+        trackH: r.height,
+        trackRadius: parseFloat(cs.borderTopLeftRadius),
+        knobW: parseFloat(after.width),
+        knobH: parseFloat(after.height),
+        knobRadius: parseFloat(after.borderTopLeftRadius),
+        labelW: labelRect.width,
+        labelH: labelRect.height,
+      };
+    });
+
+    expect(styles.trackW).toBeGreaterThan(styles.trackH);
+    expect(styles.trackH).toBeLessThan(44);
+    expect(styles.trackRadius).toBeGreaterThanOrEqual(styles.trackH / 2 - 0.5);
+    expect(Math.abs(styles.knobW - styles.knobH)).toBeLessThanOrEqual(0.5);
+    expect(styles.knobRadius).toBeGreaterThanOrEqual(styles.knobW / 2 - 0.5);
+    expect(styles.labelW).toBeGreaterThanOrEqual(44);
+    expect(styles.labelH).toBeGreaterThanOrEqual(44);
+
+    await label.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await label.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('[REQ-433/AC-4] desktop viewports preserve toggle switch and status lamp behavior and accessibility', async ({ page }) => {
+    await setManagerState({
+      running: [],
+      pending: [],
+      free_delay: 0,
+      free_status: 200,
+      queue_mode: 'normal',
+      comfy_stopped: true,
+    });
+    await stubApi(page);
+    await page.route((url) => url.port === '8899' && url.pathname.startsWith('/api/'), async (route) => {
+      const original = new URL(route.request().url());
+      const destination = new URL(original.pathname + original.search, managerUrl);
+      const response = await route.fetch({ url: destination.href });
+      await route.fulfill({ response });
+    });
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/settings#system');
+    await expect(page.locator('#settings-panel-system')).toBeVisible();
+
+    const serviceSection = page.locator('section[aria-labelledby="service-connections-title"]');
+    const lamps = serviceSection.locator('[role="img"][aria-label^="死活: "]');
+    const lampCount = await lamps.count();
+    expect(lampCount).toBe(4);
+    for (let i = 0; i < lampCount; i++) {
+      const m = await lamps.nth(i).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return { width: r.width, height: r.height, radius: parseFloat(cs.borderTopLeftRadius) };
+      });
+      expect(Math.abs(m.width - m.height)).toBeLessThanOrEqual(0.5);
+      expect(m.radius).toBeGreaterThanOrEqual(m.width / 2 - 0.5);
+    }
+
+    const desktopBadgeDot = page.locator('[data-testid="system-status-badge"]:visible').first().locator('span.rounded-full').first();
+    await expect(desktopBadgeDot).toBeVisible();
+    const dotMetrics = await desktopBadgeDot.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return { width: r.width, height: r.height, radius: parseFloat(cs.borderTopLeftRadius) };
+    });
+    expect(Math.abs(dotMetrics.width - dotMetrics.height)).toBeLessThanOrEqual(0.5);
+    expect(dotMetrics.radius).toBeGreaterThanOrEqual(dotMetrics.width / 2 - 0.5);
+
+    const toggle = page.getByRole('switch', { name: 'VRAM安全ガードを有効化' });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    const track = toggle.locator('xpath=..').locator('div[data-radius-exempt]');
+    const trackMetrics = await track.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const after = getComputedStyle(el, '::after');
+      return {
+        trackW: r.width,
+        trackH: r.height,
+        trackRadius: parseFloat(cs.borderTopLeftRadius),
+        knobW: parseFloat(after.width),
+        knobH: parseFloat(after.height),
+        knobRadius: parseFloat(after.borderTopLeftRadius),
+      };
+    });
+    expect(trackMetrics.trackW).toBeGreaterThan(trackMetrics.trackH);
+    expect(trackMetrics.trackRadius).toBeGreaterThanOrEqual(trackMetrics.trackH / 2 - 0.5);
+    expect(Math.abs(trackMetrics.knobW - trackMetrics.knobH)).toBeLessThanOrEqual(0.5);
+    expect(trackMetrics.knobRadius).toBeGreaterThanOrEqual(trackMetrics.knobW / 2 - 0.5);
+
+    await toggle.focus();
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
 });
 
 test.describe('Settings master edit sheet E2E', () => {

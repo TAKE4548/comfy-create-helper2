@@ -219,4 +219,20 @@ describe('VramGuardSection', () => {
   it('[REQ-365/AC-10] LS_KEYS.VRAM_GUARD_LIMIT equals the literal key', () => {
     expect(LS_KEYS.VRAM_GUARD_LIMIT).toBe('prompt-surgeon-vram-guard-limit')
   })
+
+  it('[REQ-433/AC-3][REQ-433/AC-4] renders guard toggle with role="switch", aria-checked, aria-label, data-radius-exempt track, and min-w-11 label', async () => {
+    renderSection()
+    const sw = await screen.findByRole('switch', { name: 'VRAM安全ガードを有効化' })
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+    const label = sw.closest('label')
+    expect(label).not.toBeNull()
+    expect(label!.className).toContain('min-h-11')
+    expect(label!.className).toContain('min-w-11')
+    expect(label!.className).toContain('justify-center')
+    const track = label!.querySelector('div')
+    expect(track).toHaveAttribute('data-radius-exempt')
+
+    fireEvent.click(sw)
+    expect(sw).toHaveAttribute('aria-checked', 'false')
+  })
 })

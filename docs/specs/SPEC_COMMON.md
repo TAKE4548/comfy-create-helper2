@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.9
-**最終更新**: 2026-11-14
+**バージョン**: 2.10
+**最終更新**: 2026-11-17
 **ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）。§1-6・§5-6のモバイルUI共通規約は採用済みだが、導入状況が「導入前」の規則は現行の挙動を表さない
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md) / [REQ-408設計](../design/REQ-408.md) / [REQ-427設計](../design/REQ-427.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md) / [REQ-408設計](../design/REQ-408.md) / [REQ-427設計](../design/REQ-427.md) / [REQ-433設計](../design/REQ-433.md)
 
 ---
 
@@ -42,6 +42,39 @@
 - アニメーション: `animate-pulse`（生成中インジケータ）/ `animate-fade-in`（モーダル等出現時）
 - モバイル操作対象は最小44×44pxを確保する。操作対象の意味・状態は色だけで伝えず、名称や状態テキストも併用する。
 - 上記の44×44pxは、モバイルUI共通規約（§1-6のMUI-06）でも最小値として維持する。画面ごとの例外はMUI-06の補足に従う。
+- **ステータスランプ（Status Lamp）標準仕様（REQ-433）**:
+  - **対象**: 死活監視・接続状態・保存状態・実行中状態を示す円形インジケータドット（ピル型テキストバッジ外枠自体はチップ/バッジ規定 `--ux-radius-chip` 6px またはピル規定に従うが、内部ドットは本仕様に従う）。
+  - **形状・角丸**:
+    - 縦横比 1:1 の**正円**とし、`rounded-full` と `data-radius-exempt` を併用して実効 `border-radius: 9999px`（幅・高さの 50% 以上）を保証する。
+    - Flex/Grid コンテナ内での潰れ防止のため `shrink-0`（または `flex-shrink-0`）を必須とする。
+    - 標準サイズ: `w-2 h-2`（8×8px）または `w-2.5 h-2.5`（10×10px）。コンパクト領域では `w-1.5 h-1.5`（6×6px）または `w-[7px] h-[7px]`（7×7px）を許容する。
+  - **状態表現（色のみで伝えない原則）**:
+    - 稼働中・正常・完了: `bg-emerald-400` / `bg-accent-green`（`#3ECF8E`）
+    - 確認中・待機中・進行中: `bg-amber-400` / `bg-yellow-400` / `bg-indigo-400` / `bg-[#7C6FDD]` / `bg-zinc-500`（必要に応じ `animate-pulse` / `animate-ping`）
+    - 停止中・エラー・失敗: `bg-rose-400` / `bg-red-500`
+    - **必須併記**: 隣接する名称・状態テキスト（例: `稼働中`、`停止中`、`不明`、`Ready`）または `role="img" aria-label="..."`（操作可能ランプの場合はボタン側の `aria-label`）を必ず併用し、色覚のみに依存しない。
+  - **モバイル角丸保護・操作領域**:
+    - `data-radius-exempt` により `index.css` の一律角丸補正（8px）から保護する。
+    - ランプ自体が操作対象（`role="button"` 等）を兼ねる場合（例: `SystemStatusBadge` の `variant="dot"`）は、`data-tap-target-exempt` を併用して視覚外形（正円ドット）を維持したまま、`before:absolute` による Hit-Slop 拡張で**有効タップ領域 44×44px 以上**を確保する。
+- **トグルスイッチ（Toggle Switch）標準仕様（REQ-433）**:
+  - **対象と区分**:
+    - **対象（ON/OFF トグルスイッチ）**: 2値状態（ON/OFF、有効/無効、boolean）を直接切り替えるスイッチ UI（`ParamPanel`、`ParamFieldControl`、`VramGuardSection` 等）。
+    - **対象外（押しボタン型トグル）**: チップ/テキスト表示切替（`TagChipEditor` / `TagChipViewer`）、アコーディオン開閉、セクション展開ボタン、タブ切替等は押しボタン型トグルとして従来の角丸 8px ボタン（`--ux-radius-control`）を維持する。
+  - **構造・形状**:
+    - **トラック（Track）**: 両端半円のピル型（`rounded-full` + `data-radius-exempt`、実効 `border-radius: 9999px`）。
+      - 標準サイズ: `h-5 w-9`（36×20px、`border-2 border-transparent`）
+      - コンパクトサイズ（リスト行内用）: `h-4 w-7`（28×16px、`border border-transparent`）
+    - **ノブ（Knob）**: 縦横比 1:1 の正円（`rounded-full` + `data-radius-exempt`、`bg-white shadow`）。
+      - 標準サイズ用: `h-4 w-4`（16×16px、ON: `translate-x-4` / OFF: `translate-x-0`）
+      - コンパクトサイズ用: `h-3 w-3`（12×12px、ON: `translate-x-3` / OFF: `translate-x-0`）
+  - **状態表現・アクセシビリティ**:
+    - **ON**: `bg-accent-green`（`#3ECF8E`、ただし破壊的/警告系 Bypass トグルは `bg-red-500` を維持）、ノブ右端。
+    - **OFF**: `bg-zinc-700`、ノブ左端。
+    - **Disabled**: `disabled:opacity-40 disabled:cursor-not-allowed`。
+    - **ARIA**: `role="switch"` と `aria-checked={isOn}` を必須とし、`aria-label` または関連ラベルで対象項目を識別可能にする。
+  - **モバイル角丸保護 & 44×44px Hit-Slop 要件**:
+    - トラック（`<button>` / `<div>`）およびノブ（`<span>`）の双方に `data-radius-exempt` を付与し、`index.css` の一律 8px 上書きから保護する。
+    - `<button role="switch">` には `data-tap-target-exempt` を付与してモバイル時の `min-height: 44px` 強制引き伸ばし（角丸正方形化）を防ぎつつ、`relative touch-manipulation before:absolute before:content-['']` による Hit-Slop（`h-5 w-9` には `border-2` の padding-box 高さ 16px に対して `before:-inset-x-2 before:-inset-y-3.5`（16px + 28px = 44px、幅は 32px + 16px = 48px）で 48×44px、`h-4 w-7` には `before:-inset-x-2 before:-inset-y-3.5` で 44×44px）で**有効タップ領域 44×44px 以上**を確保する（`<label>` + `<input type="checkbox" role="switch">` 構成の場合は `<label>` で `min-h-11 min-w-11` を確保する）。
 
 ### 1-4. 共通モーダルとレスポンシブ境界（REQ-334）
 
@@ -145,6 +178,7 @@
    - 入力ガード: テキスト入力検知でバーを隠す際、`checkbox / radio / button` を厳格除外。
    - キーボード操作: `Ctrl+Enter`（生成）および `Esc`（閉じる）を実装。ホバーのみで押せる隠しボタンを排除。
    - Tag/Chip 入力コントロールのモバイル対応: チップ/タグ入力コンポーネント（`PatternTagInput` 等）では、モバイル仮想キーボードのEnterによるフォーム送信・次フィールド誤遷移を防ぐ `enterKeyHint="done"` と `e.preventDefault()`、タップ確定用「追加」ボタン（44×44px Hit-Slop: `relative before:absolute before:-inset-2 touch-manipulation`）、日本語IME変換確定ガード（`isComposing` / `keyCode === 229`）、およびフォーカス離脱（`onBlur`）時の自動確定フォールバックを必須とする（MUI-10、REQ-415）。
+   - ON/OFF トグルスイッチ・操作可能ステータスランプのモバイル保護: `rounded-full` と `data-radius-exempt` で正円・ピル形状を維持し、`<button role="switch">` や操作可能ランプには `data-tap-target-exempt` で視覚外形の強制引き伸ばしを防ぎつつ、`relative touch-manipulation before:absolute before:content-['']` による Hit-Slop（`h-5 w-9`（`border-2` padding-box 16px + 28px = 44px）および `h-4 w-7` ともに `before:-inset-x-2 before:-inset-y-3.5`）で有効タップ領域 44×44px 以上を確保する（§1-3 参照、REQ-433）。
 4. **📐 Preset 4: Shell & Page Layout (シェル・ページレイアウト)**
    - ビューポート単位規約: 生の `100vh` を禁止し、`100dvh` または `min-h-[100dvh]` を使用。
    - Safe Area: 固定バーに `pb-[env(safe-area-inset-bottom)]` を組み込み、子画面の二重 `pb` を排除。

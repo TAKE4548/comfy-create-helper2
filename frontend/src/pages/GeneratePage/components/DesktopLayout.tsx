@@ -398,7 +398,7 @@ export const DesktopLayout = ({
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
               <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
                 <span className="text-amber-300 font-semibold">他セッションで生成中{normalWait?.kind === 'session' ? ` (${normalWait.remaining})` : '...'}</span>
               </span>
               <span>{Math.round(displayNodePercentage)}%</span>
@@ -435,7 +435,7 @@ export const DesktopLayout = ({
         </div>
         <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />
+            <div data-radius-exempt className="w-2 h-2 rounded-full bg-accent-green shrink-0" />
             <span className="font-semibold text-zinc-300">Ready</span>
           </div>
           <span className="font-mono text-accent-green font-semibold">0%</span>

@@ -509,7 +509,7 @@ export const MobileLayout = ({
         {vramWaitStatus?.isWaiting ? (
           <div className="flex items-center justify-between text-[10px]">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+              <span data-radius-exempt className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0" />
               <span className="font-semibold text-yellow-300 truncate">VRAM解放待ち</span>
               <span className="text-zinc-600">|</span>
               <span className="text-zinc-400 truncate ux-numeric">
@@ -574,7 +574,7 @@ export const MobileLayout = ({
             <div className="space-y-1">
               <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span data-radius-exempt className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
                   <span className="text-amber-300 font-semibold">他セッションで生成中{normalWait?.kind === 'session' ? ` (${normalWait.remaining})` : '...'}</span>
                 </span>
                 <span>{Math.round(displayNodePercentage)}%</span>
@@ -608,7 +608,7 @@ export const MobileLayout = ({
         ) : (
           <div className="flex items-center justify-between text-[10px] text-zinc-400">
             <div className="flex items-center gap-1.5 min-w-0">
-              <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />
+              <div data-radius-exempt className="w-1.5 h-1.5 rounded-full bg-accent-green shrink-0" />
               <span className="truncate">Ready</span>
               <span className="text-zinc-600">|</span>
               <span 

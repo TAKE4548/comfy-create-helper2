@@ -166,7 +166,7 @@
     border-radius: var(--ux-radius-modal);
   }
 
-  button,
+  button:not([data-radius-exempt]),
   input,
   select,
   textarea,
@@ -181,7 +181,7 @@
     border-radius: var(--ux-radius-control);
   }
 
-  [class~='rounded-full'][class*='px-'] {
+  [class~='rounded-full'][class*='px-']:not([data-radius-exempt]) {
     border-radius: var(--ux-radius-chip);
   }
 

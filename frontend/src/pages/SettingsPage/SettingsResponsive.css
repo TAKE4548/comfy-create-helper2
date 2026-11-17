@@ -83,14 +83,14 @@
   .req314-settings input:not([type='checkbox']):not([type='radio']),
   .req314-settings select,
   .req314-settings textarea,
-  .req314-settings button,
-  .req314-settings [role='button'] {
+  .req314-settings button:not([data-tap-target-exempt]),
+  .req314-settings [role='button']:not([data-tap-target-exempt]) {
     min-height: 44px;
   }
 
-  .req314-settings button:has(svg),
+  .req314-settings button:not([data-tap-target-exempt]):has(svg),
   .req314-settings [data-drag-handle],
-  .req314-settings [role='button'] {
+  .req314-settings [role='button']:not([data-tap-target-exempt]) {
     min-width: 44px;
     min-height: 44px;
     flex-shrink: 0;

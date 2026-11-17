@@ -71,16 +71,22 @@ export const ParamFieldControl: React.FC<ParamFieldControlProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
+              role="switch"
+              aria-checked={paramPatch[m.role] === 'true'}
+              aria-label={m.display_name || m.role}
+              data-radius-exempt
+              data-tap-target-exempt
               disabled={!isEnabled}
               onClick={() => {
                 const currentVal = paramPatch[m.role] === 'true';
                 setParamPatch(prev => ({ ...prev, [m.role]: currentVal ? 'false' : 'true' }));
               }}
-              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                 paramPatch[m.role] === 'true' ? 'bg-[#3ECF8E]' : 'bg-zinc-700'
               }`}
             >
               <span
+                data-radius-exempt
                 className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                   paramPatch[m.role] === 'true' ? 'translate-x-4' : 'translate-x-0'
                 }`}
@@ -107,16 +113,22 @@ export const ParamFieldControl: React.FC<ParamFieldControlProps> = ({
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
+                role="switch"
+                aria-checked={paramPatch[m.role] === 'true'}
+                aria-label={m.display_name || m.role}
+                data-radius-exempt
+                data-tap-target-exempt
                 disabled={!isEnabled}
                 onClick={() => {
                   const currentVal = paramPatch[m.role] === 'true';
                   setParamPatch(prev => ({ ...prev, [m.role]: currentVal ? 'false' : 'true' }));
                 }}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer touch-manipulation rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none before:absolute before:-inset-x-2 before:-inset-y-3.5 before:content-[''] ${
                   paramPatch[m.role] === 'true' ? 'bg-[#3ECF8E]' : 'bg-zinc-700'
                 }`}
               >
                 <span
+                  data-radius-exempt
                   className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                     paramPatch[m.role] === 'true' ? 'translate-x-4' : 'translate-x-0'
                   }`}

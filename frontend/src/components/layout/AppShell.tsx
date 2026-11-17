@@ -89,7 +89,7 @@ export function AppShell() {
                     {label}
                   </span>
                   {isActive && !isCollapsed && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
+                    <div data-radius-exempt className="ml-auto w-1.5 h-1.5 shrink-0 rounded-full bg-accent-green" />
                   )}
                 </>
               )}

@@ -71,7 +71,7 @@ const EMPTY_SNAPSHOT = {
 }
 
 // Stub only backend API calls (pathname starts with /api/); never Vite module requests like /src/api/*.
-async function stubApi(page: Page, isEmpty = false): Promise<string[]> {
+async function stubApi(page: Page, isEmpty = false, workflowOverride?: unknown): Promise<string[]> {
   const wsUrls: string[] = []
   // Sever the app WebSocket: page.route does not intercept WebSockets, and the Vite proxy would
   // forward /api/ws to a live backend whose snapshot overrides the HTTP stub (REQ-395).
@@ -87,7 +87,7 @@ async function stubApi(page: Page, isEmpty = false): Promise<string[]> {
 
     if (req.method() !== 'GET') return json({})
     if (path === '/workflows') return json(WORKFLOW_LIST)
-    if (path === '/workflows/1') return json(WORKFLOW)
+    if (path === '/workflows/1') return json(workflowOverride ?? WORKFLOW)
     if (path === '/settings/vram') return json(VRAM)
     if (path === '/generation/state') return json(isEmpty ? EMPTY_SNAPSHOT : MOCK_SNAPSHOT)
     if (path === '/generation/upstream-queue') return json({ running: [], pending: [] })
@@ -117,7 +117,8 @@ async function openGenerate(
   page: Page,
   width: number,
   height: number,
-  isEmpty = false
+  isEmpty = false,
+  workflowOverride?: unknown
 ): Promise<string[]> {
   await page.addInitScript(({ empty, images }) => {
     localStorage.clear()
@@ -132,7 +133,7 @@ async function openGenerate(
       indexedDB.deleteDatabase('REACT_QUERY_OFFLINE_CACHE')
     } catch {}
   }, { empty: isEmpty, images: MOCK_OUTPUTS.map((o) => o.view_url) })
-  const wsUrls = await stubApi(page, isEmpty)
+  const wsUrls = await stubApi(page, isEmpty, workflowOverride)
   await page.setViewportSize({ width, height })
   await page.goto('/')
   await expect(page.locator('#workflow-actions-btn')).toBeVisible()
@@ -299,6 +300,93 @@ test.describe('Mobile Generate Gallery, Bottom Sheet, Fullscreen Viewer & PC Non
       for (const url of wsUrls) {
         expect(new URL(url).pathname).toBe('/api/ws')
       }
+    })
+
+    test('[REQ-433/AC-3] mobile ParamPanel toggle switches keep pill shape and 44x44 hit slop', async ({
+      page,
+    }) => {
+      const workflowWithSwitches = {
+        ...WORKFLOW,
+        mappings: [
+          {
+            id: 101,
+            workflow_id: 1,
+            node_id: '10',
+            class_type: 'TestNode',
+            param_name: 'enabled',
+            role: 'boolean_flag',
+            display_name: 'フラグ切替',
+            input_type: 'boolean',
+            is_active: true,
+            default_value: 'false',
+            sort_order: 1,
+            stage_key: null,
+            stage_name: null,
+          },
+          {
+            id: 102,
+            workflow_id: 1,
+            node_id: '11',
+            class_type: 'KSampler',
+            param_name: 'seed',
+            role: 'Sampler_Seed',
+            display_name: 'Seed',
+            input_type: 'int',
+            is_active: true,
+            default_value: '42',
+            sort_order: 2,
+            stage_key: null,
+            stage_name: null,
+          },
+        ],
+      }
+      await openGenerate(page, 375, 667, false, workflowWithSwitches)
+
+      await page.locator('button[aria-controls="mobile-parameters-panel"]').click()
+      const paramsPanel = page.locator('#mobile-parameters-panel')
+      await expect(paramsPanel).toBeVisible()
+
+      const switchBtn = paramsPanel.locator('#param-mobile-boolean_flag')
+      await expect(switchBtn).toBeVisible()
+      await expect(switchBtn).toHaveAttribute('role', 'switch')
+      await expect(switchBtn).toHaveAttribute('aria-checked', 'false')
+
+      const metrics = await switchBtn.evaluate((el) => {
+        const trackRect = el.getBoundingClientRect()
+        const trackCs = getComputedStyle(el)
+        const knob = el.querySelector('span')!
+        const knobRect = knob.getBoundingClientRect()
+        const knobCs = getComputedStyle(knob)
+        const beforeCs = getComputedStyle(el, '::before')
+        return {
+          trackW: trackRect.width,
+          trackH: trackRect.height,
+          trackRadius: parseFloat(trackCs.borderTopLeftRadius),
+          knobW: knobRect.width,
+          knobH: knobRect.height,
+          knobRadius: parseFloat(knobCs.borderTopLeftRadius),
+          hitW: parseFloat(beforeCs.width),
+          hitH: parseFloat(beforeCs.height),
+        }
+      })
+
+      expect(metrics.trackW).toBeGreaterThan(metrics.trackH)
+      expect(metrics.trackH).toBeLessThan(44)
+      expect(metrics.trackRadius).toBeGreaterThanOrEqual(metrics.trackH / 2 - 0.5)
+      expect(Math.abs(metrics.knobW - metrics.knobH)).toBeLessThanOrEqual(0.5)
+      expect(metrics.knobRadius).toBeGreaterThanOrEqual(metrics.knobW / 2 - 0.5)
+      expect(metrics.hitW).toBeGreaterThanOrEqual(44)
+      expect(metrics.hitH).toBeGreaterThanOrEqual(44)
+
+      await switchBtn.click()
+      await expect(switchBtn).toHaveAttribute('aria-checked', 'true')
+      await switchBtn.click()
+      await expect(switchBtn).toHaveAttribute('aria-checked', 'false')
+
+      const seedToggle = paramsPanel.locator('#seed-toggle-mobile')
+      await expect(seedToggle).toBeVisible()
+      const seedRadius = await seedToggle.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))
+      expect(seedRadius).toBe(8)
     })
   })
 

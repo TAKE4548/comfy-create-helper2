@@ -265,7 +265,7 @@ describe('Settings autosave integration', () => {
     mountRealSettingsSection('/vram')
     const threshold = await screen.findByLabelText('最小必要空き容量 (vram_min_free_gb)')
     fireEvent.change(threshold, { target: { value: '' } })
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('switch', { name: 'VRAM安全ガードを有効化' }))
     await screen.findByText('設定を保存しました')
     expect(requests).toEqual([{ vram_min_free_gb: 4, vram_guard_enabled: false }])
     expect(threshold).toHaveValue(null)
