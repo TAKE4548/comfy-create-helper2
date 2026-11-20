@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app import models
 from app.migrations import run_migrations, MigrationRunner
-from app.migrations.steps import MigrationStep, step_036_prompt_structure_templates
+from app.migrations.steps import (
+    MigrationStep,
+    step_036_prompt_structure_templates,
+    step_037_cleanup_orphaned_workflow_preset_values,
+)
 from app.seeder import seed_initial_data, _seed_base_models, _migrate_existing_loras
 
 
@@ -1211,6 +1215,174 @@ def test_step_036_migration_idempotent():
         assert "prompt_structure_templates" in inspector.get_table_names()
         wf_cols = {c["name"] for c in inspector.get_columns("workflows")}
         assert "prompt_template_config" in wf_cols
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-437")
+@getattr(pytest.mark, "AC-3")
+@pytest.mark.parametrize(
+    "runner_mode",
+    [
+        pytest.param("direct_step", id="[REQ-437/AC-3]-step037-direct"),
+        pytest.param("run_migrations", id="[REQ-437/AC-3]-run-migrations"),
+    ],
+)
+def test_step_037_cleanup_orphaned_workflow_preset_values_and_idempotency(runner_mode: str):
+    """[REQ-437/AC-3] Step 037 deletes orphaned workflow_preset_values, preserves valid rows, and is idempotent."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    with engine.begin() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE,
+                json_body TEXT NOT NULL
+            );
+        """))
+        conn.execute(sa.text("INSERT INTO workflows (id, name, json_body) VALUES (1, 'TestWF', '{}');"))
+
+        conn.execute(sa.text("""
+            CREATE TABLE mapping_variants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role VARCHAR NOT NULL,
+                binding_rule_set_id INTEGER,
+                node_selector_id INTEGER
+            );
+        """))
+        conn.execute(sa.text("CREATE UNIQUE INDEX uq_mapping_variant_role ON mapping_variants(role);"))
+        conn.execute(sa.text("""
+            INSERT INTO mapping_variants (id, role)
+            VALUES (1, 'sampler_seed'), (2, 'sampler_steps');
+        """))
+
+        conn.execute(sa.text("""
+            CREATE TABLE workflow_presets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id INTEGER NOT NULL,
+                name VARCHAR NOT NULL,
+                param_values TEXT NOT NULL DEFAULT '{}',
+                applied_assets TEXT NOT NULL DEFAULT '{}',
+                batch_size INTEGER NOT NULL DEFAULT 1,
+                seed_mode VARCHAR NOT NULL DEFAULT 'fixed',
+                seed INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        conn.execute(sa.text("""
+            INSERT INTO workflow_presets (id, workflow_id, name)
+            VALUES (10, 1, 'Valid Preset');
+        """))
+
+        conn.execute(sa.text("""
+            CREATE TABLE workflow_preset_values (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                preset_id INTEGER NOT NULL REFERENCES workflow_presets(id) ON DELETE CASCADE,
+                variant_id INTEGER NOT NULL REFERENCES mapping_variants(id) ON DELETE CASCADE,
+                sub_key VARCHAR NOT NULL DEFAULT '',
+                value TEXT NOT NULL,
+                CONSTRAINT uq_workflow_preset_values_preset_variant_sub_key UNIQUE (preset_id, variant_id, sub_key)
+            );
+        """))
+        conn.execute(sa.text("""
+            INSERT INTO workflow_preset_values (preset_id, variant_id, sub_key, value)
+            VALUES
+                (10, 1, '', '42'),
+                (10, 2, 'sub', '20'),
+                (999, 1, '', 'orphan_1'),
+                (1000, 2, 'sub', 'orphan_2');
+        """))
+
+    def _run_once() -> None:
+        if runner_mode == "direct_step":
+            with engine.begin() as conn:
+                inspector = sa.inspect(conn)
+                step_037_cleanup_orphaned_workflow_preset_values(conn, inspector)
+        else:
+            run_migrations(target_engine=engine)
+
+    # First run: orphaned rows must be deleted; valid rows must remain intact
+    _run_once()
+    with engine.connect() as conn:
+        rows_after_first = conn.execute(sa.text("""
+            SELECT preset_id, variant_id, sub_key, value
+            FROM workflow_preset_values
+            ORDER BY preset_id, variant_id, sub_key
+        """)).fetchall()
+        assert rows_after_first == [
+            (10, 1, "", "42"),
+            (10, 2, "sub", "20"),
+        ]
+        preset_ids = conn.execute(sa.text("SELECT id FROM workflow_presets ORDER BY id")).fetchall()
+        assert preset_ids == [(10,)]
+
+    # Second run: idempotent without errors and valid rows stay unchanged
+    _run_once()
+    with engine.connect() as conn:
+        rows_after_second = conn.execute(sa.text("""
+            SELECT preset_id, variant_id, sub_key, value
+            FROM workflow_preset_values
+            ORDER BY preset_id, variant_id, sub_key
+        """)).fetchall()
+        assert rows_after_second == [
+            (10, 1, "", "42"),
+            (10, 2, "sub", "20"),
+        ]
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-437")
+@getattr(pytest.mark, "AC-3")
+@pytest.mark.parametrize(
+    "missing_case",
+    [
+        pytest.param("empty_db", id="[REQ-437/AC-3]-missing-both-tables"),
+        pytest.param("missing_workflow_presets", id="[REQ-437/AC-3]-missing-workflow-presets"),
+        pytest.param("missing_workflow_preset_values", id="[REQ-437/AC-3]-missing-workflow-preset-values"),
+    ],
+)
+def test_step_037_skips_when_prerequisite_tables_missing(missing_case: str):
+    """[REQ-437/AC-3] Step 037 safely skips without error when workflow_presets or workflow_preset_values is missing."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    with engine.begin() as conn:
+        if missing_case == "missing_workflow_presets":
+            conn.execute(sa.text("""
+                CREATE TABLE workflow_preset_values (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    preset_id INTEGER NOT NULL,
+                    variant_id INTEGER NOT NULL,
+                    sub_key VARCHAR NOT NULL DEFAULT '',
+                    value TEXT NOT NULL
+                );
+            """))
+            conn.execute(sa.text("""
+                INSERT INTO workflow_preset_values (preset_id, variant_id, sub_key, value)
+                VALUES (999, 1, '', '42');
+            """))
+        elif missing_case == "missing_workflow_preset_values":
+            conn.execute(sa.text("""
+                CREATE TABLE workflow_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id INTEGER NOT NULL,
+                    name VARCHAR NOT NULL
+                );
+            """))
+            conn.execute(sa.text("INSERT INTO workflow_presets (id, workflow_id, name) VALUES (10, 1, 'Valid');"))
+
+        inspector = sa.inspect(conn)
+        step_037_cleanup_orphaned_workflow_preset_values(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        tables = set(inspector.get_table_names())
+        if missing_case == "empty_db":
+            assert tables == set()
+        elif missing_case == "missing_workflow_presets":
+            rows = conn.execute(sa.text("SELECT preset_id, value FROM workflow_preset_values")).fetchall()
+            assert rows == [(999, "42")]
+        elif missing_case == "missing_workflow_preset_values":
+            rows = conn.execute(sa.text("SELECT id, name FROM workflow_presets")).fetchall()
+            assert rows == [(10, "Valid")]
+
 
 
 

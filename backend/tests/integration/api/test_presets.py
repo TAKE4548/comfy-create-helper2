@@ -207,6 +207,188 @@ def test_preset_delete_and_bulk_delete(
     assert len(fetched) == 0
 
 
+@getattr(pytest.mark, "REQ-437")
+@getattr(pytest.mark, "AC-1")
+@pytest.mark.parametrize(
+    ("target_selector", "expected_deleted_count"),
+    [
+        ("multiple", 2),
+        ("empty", 0),
+        ("nonexistent", 0),
+        ("mixed_duplicate", 1),
+    ],
+    ids=[
+        "[REQ-437/AC-1]-delete_multiple_preserves_other",
+        "[REQ-437/AC-1]-empty_ids",
+        "[REQ-437/AC-1]-nonexistent_only",
+        "[REQ-437/AC-1]-mixed_existing_nonexistent_duplicate",
+    ],
+)
+def test_bulk_delete_presets_cascades_preset_values(
+    client: TestClient,
+    db_session: Session,
+    test_workflow: models.Workflow,
+    target_selector: str,
+    expected_deleted_count: int,
+) -> None:
+    """[REQ-437/AC-1] Bulk deleting presets removes child WorkflowPresetValue rows while keeping unrelated rows."""
+    variant = _create_variant_helper(db_session, "BulkDeletePrompt")
+
+    def _create_preset(name: str, value: str) -> dict:
+        res = client.post(
+            "/api/workflow-presets",
+            json={
+                "workflow_id": test_workflow.id,
+                "name": name,
+                "param_values": {"BulkDeletePrompt": value},
+                "applied_assets": {},
+                "batch_size": 1,
+                "seed_mode": "random",
+                "seed": -1,
+            },
+        )
+        assert res.status_code == 201
+        return res.json()
+
+    p1 = _create_preset("P1", "v1")
+    p2 = _create_preset("P2", "v2")
+    p_keep = _create_preset("PKeep", "v_keep")
+
+    initial_values = (
+        db_session.query(models.WorkflowPresetValue)
+        .filter(models.WorkflowPresetValue.preset_id.in_([p1["id"], p2["id"], p_keep["id"]]))
+        .all()
+    )
+    assert len(initial_values) == 3
+
+    if target_selector == "multiple":
+        delete_ids = [p1["id"], p2["id"]]
+        deleted_preset_ids = [p1["id"], p2["id"]]
+        kept_preset_ids = [p_keep["id"]]
+    elif target_selector == "empty":
+        delete_ids = []
+        deleted_preset_ids = []
+        kept_preset_ids = [p1["id"], p2["id"], p_keep["id"]]
+    elif target_selector == "nonexistent":
+        delete_ids = [999999]
+        deleted_preset_ids = []
+        kept_preset_ids = [p1["id"], p2["id"], p_keep["id"]]
+    else:
+        delete_ids = [p1["id"], 999999, p1["id"]]
+        deleted_preset_ids = [p1["id"]]
+        kept_preset_ids = [p2["id"], p_keep["id"]]
+
+    assert len(deleted_preset_ids) == expected_deleted_count
+
+    bulk_res = client.request("DELETE", "/api/workflow-presets/bulk", json={"ids": delete_ids})
+    assert bulk_res.status_code == 204
+    db_session.expire_all()
+
+    if deleted_preset_ids:
+        remaining_deleted_presets = (
+            db_session.query(models.WorkflowPreset)
+            .filter(models.WorkflowPreset.id.in_(deleted_preset_ids))
+            .count()
+        )
+        remaining_deleted_values = (
+            db_session.query(models.WorkflowPresetValue)
+            .filter(models.WorkflowPresetValue.preset_id.in_(deleted_preset_ids))
+            .count()
+        )
+        assert remaining_deleted_presets == 0
+        assert remaining_deleted_values == 0
+
+    kept_presets = (
+        db_session.query(models.WorkflowPreset)
+        .filter(models.WorkflowPreset.id.in_(kept_preset_ids))
+        .all()
+    )
+    kept_values = (
+        db_session.query(models.WorkflowPresetValue)
+        .filter(models.WorkflowPresetValue.preset_id.in_(kept_preset_ids))
+        .all()
+    )
+    assert len(kept_presets) == len(kept_preset_ids)
+    assert len(kept_values) == len(kept_preset_ids)
+    assert {v.variant_id for v in kept_values} == {variant.id}
+
+
+@getattr(pytest.mark, "REQ-437")
+@getattr(pytest.mark, "AC-2")
+@pytest.mark.parametrize(
+    "recreate_name",
+    ["RecreatedPreset"],
+    ids=["[REQ-437/AC-2]-recreate_after_max_id_bulk_delete"],
+)
+def test_create_preset_after_bulk_delete_reuses_id_without_integrity_error(
+    client: TestClient,
+    db_session: Session,
+    test_workflow: models.Workflow,
+    recreate_name: str,
+) -> None:
+    """[REQ-437/AC-2] Creating a preset with the same variant after bulk-deleting the max-ID preset succeeds without IntegrityError."""
+    variant = _create_variant_helper(db_session, "ReusedIdPrompt")
+
+    p_keep = client.post(
+        "/api/workflow-presets",
+        json={
+            "workflow_id": test_workflow.id,
+            "name": "KeepPreset",
+            "param_values": {"ReusedIdPrompt": "keep_val"},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        },
+    )
+    assert p_keep.status_code == 201
+
+    p_max = client.post(
+        "/api/workflow-presets",
+        json={
+            "workflow_id": test_workflow.id,
+            "name": "MaxPreset",
+            "param_values": {"ReusedIdPrompt": "old_val"},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        },
+    )
+    assert p_max.status_code == 201
+    deleted_max_id = p_max.json()["id"]
+
+    bulk_res = client.request("DELETE", "/api/workflow-presets/bulk", json={"ids": [deleted_max_id]})
+    assert bulk_res.status_code == 204
+
+    recreate_res = client.post(
+        "/api/workflow-presets",
+        json={
+            "workflow_id": test_workflow.id,
+            "name": recreate_name,
+            "param_values": {"ReusedIdPrompt": "new_val"},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        },
+    )
+    assert recreate_res.status_code == 201, recreate_res.text
+    recreated = recreate_res.json()
+    assert recreated["id"] == deleted_max_id
+    assert recreated["param_values"]["ReusedIdPrompt"] == "new_val"
+
+    db_session.expire_all()
+    pv_rows = (
+        db_session.query(models.WorkflowPresetValue)
+        .filter(models.WorkflowPresetValue.preset_id == recreated["id"])
+        .all()
+    )
+    assert len(pv_rows) == 1
+    assert pv_rows[0].variant_id == variant.id
+    assert pv_rows[0].value == "new_val"
+
+
 def test_preset_suffix_cascade_renames_role_value_and_keeps_slot_mode_key(
     client: TestClient, db_session: Session, test_workflow: models.Workflow
 ) -> None:

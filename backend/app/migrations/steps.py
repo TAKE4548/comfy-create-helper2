@@ -1446,6 +1446,23 @@ def step_036_prompt_structure_templates(conn: Connection, inspector: Inspector) 
             logger.info("Migrated: Added 'prompt_template_config' column to 'workflow_history' table.")
 
 
+def step_037_cleanup_orphaned_workflow_preset_values(conn: Connection, inspector: Inspector) -> None:
+    """Remove orphaned workflow_preset_values rows whose parent workflow_presets row no longer exists."""
+    table_names = set(inspector.get_table_names())
+    if "workflow_preset_values" not in table_names or "workflow_presets" not in table_names:
+        return
+
+    res = conn.execute(sa.text("""
+        DELETE FROM workflow_preset_values
+        WHERE NOT EXISTS (
+            SELECT 1 FROM workflow_presets wp
+            WHERE wp.id = workflow_preset_values.preset_id
+        )
+    """))
+    deleted_count = res.rowcount if hasattr(res, "rowcount") and res.rowcount is not None else 0
+    logger.info(f"Migrated: Step 037 cleaned up {deleted_count} orphaned workflow_preset_values rows.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -1471,6 +1488,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("034", "mapping_variants_phase5_constraints", step_034_mapping_variants_phase5_constraints),
     MigrationStep("035", "variant_id_references", step_035_variant_id_references),
     MigrationStep("036", "prompt_structure_templates", step_036_prompt_structure_templates),
+    MigrationStep("037", "cleanup_orphaned_workflow_preset_values", step_037_cleanup_orphaned_workflow_preset_values),
 ]
 
 

@@ -231,8 +231,12 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
 def bulk_delete_presets(payload: schemas.WorkflowPresetBulkDelete, db: Session = Depends(get_db)):
     """Delete multiple presets by ID. Non-existent IDs are silently skipped."""
     if payload.ids:
+        target_ids = list(dict.fromkeys(payload.ids))
+        db.query(models.WorkflowPresetValue).filter(
+            models.WorkflowPresetValue.preset_id.in_(target_ids)
+        ).delete(synchronize_session=False)
         db.query(models.WorkflowPreset).filter(
-            models.WorkflowPreset.id.in_(payload.ids)
+            models.WorkflowPreset.id.in_(target_ids)
         ).delete(synchronize_session=False)
         db.commit()
 
