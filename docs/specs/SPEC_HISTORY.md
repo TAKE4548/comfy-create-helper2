@@ -1,10 +1,10 @@
 # Prompt Surgeon — History ページ仕様書 (SPEC_HISTORY)
 
 **バージョン**: 2.5
-**最終更新**: 2026-11-14
+**最終更新**: 2026-11-21
 **実装ファイル**: `frontend/src/pages/HistoryPage.tsx`（`AlbumListView`, `AlbumDetailView`, `hooks` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-427設計](../design/REQ-427.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-427設計](../design/REQ-427.md) / [REQ-435設計](../design/REQ-435.md)
 
 ---
 
@@ -20,7 +20,7 @@
 | 機能 | 説明 |
 |---|---|
 | スナップショット一覧 | 保存済みスナップショットをグリッド表示（新しい順・古い順ソート、50件単位の無限スクロール・遅延ロード） |
-| 複合フィルタ | ワークフロー、使用 LoRA、使用 TagSet による **AND 結合** 絞り込み（一致 0 件時は Empty State とフィルタ解除ボタンを表示） |
+| 複合フィルタ | ワークフロー、使用 LoRA、使用 TagSet による **AND 結合** 絞り込み（一致 0 件時は Empty State と「フィルターを解除」ボタンを表示。モバイルでは初期折り畳み 1 行バー＋有効件数表示＋常時ソート切替を提供） |
 | フキダシ・セリフ編集 | スナップショットにフキダシ・セリフ・漫画エフェクトを合成して新規派生保存（元画像は非破壊保持） |
 | 漫画化一括バッチ | 複数画像を選択し、LLM によるセリフ自動生成とフキダシ合成をバックグラウンド実行 |
 | アルバム作成・管理 | スナップショットを選択してアルバム生成。複数選択・一括追加に対応 |
@@ -48,6 +48,19 @@
 │  [選択したものをアルバムへ] [一括漫画化バッチ] [一括ダウンロード]        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 3-1. モバイル フィルターバー折り畳み・UI 密度整理 (`SnapshotGalleryView.tsx`, `HistoryPage`, REQ-435)
+
+- **モバイル スナップショット一覧 1 行フィルターバー (`data-testid="history-mobile-filter-bar"`, 幅 767px 以下 `md:hidden`)**:
+  - 初期状態ではフィルター領域を折り畳み（`isMobileFilterOpen = false`）、高さ約 44px の 1 行バーのみを常時表示する。幅 360×640px の初期表示において、最初の画像カードがスクロールなしでビューポート内に視認できる。
+  - **左側（フィルター開閉＋有効件数表示）**: 開閉ボタン（`#history-mobile-filter-toggle`、`aria-expanded`、`aria-controls="history-filter-controls"`、`data-tap-target-exempt` `h-8`）を表示する。ラベル「フィルター」に加え、Workflow / LoRA / TagSet の絞り込み条件を 1 件以上指定している場合（`activeFilterCount > 0`）は、折り畳み時を含め文字で件数バッジ（`(${activeFilterCount}件)`、`data-testid="history-active-filter-count"`）を表示する。
+  - **右側（常時ソート操作＋件数表示）**: ソート切替（「新しい順」「古い順」、各 `data-tap-target-exempt` `h-8`）と結果件数（`{sortedSnapshots.length}件`）をバー右側に常時配置し、フィルター領域の開閉状態によらずソートを実行できる。
+- **展開フィルターパネル (`#history-filter-controls`)**:
+  - モバイルでは開閉ボタン展開時のみ、Desktop（幅 768px 以上）では常時表示する。Workflow / LoRA / TagSet の検索入力・セレクト・有効絞り込みチップを **AND 結合** で適用する。Desktop の検索入力・有効絞り込みチップは `md:min-h-0 md:h-8`（高さ 32px）のコンパクト寸法とする。
+- **0 件時 Empty State フィルター解除**:
+  - 絞り込み結果が 0 件かつ有効フィルターが存在する場合（「条件に一致するスナップショットがありません。」）は **「フィルターを解除」** ボタンを表示し、クリック／タップで全フィルター条件（Workflow / LoRA / TagSet）と検索文字列を一括クリアする。
+- **モバイル Hit-Slop 密度整理**:
+  - `HistoryPage` のヘッダー操作（`#view-snapshots`, `#view-albums`, `#open-batch-speech-modal-btn`, `#start-create-album`）および上記フィルター開閉・ソートボタンは、`data-tap-target-exempt` + `h-8`（視覚高さ 32px）としつつ、`::before` Hit-Slop で有効タップ領域 44×44px 以上・隣接非重複・`:focus-visible` 可視性を維持する（View Toggle／ソートボタン外枠の `overflow-hidden` を除去し、切り詰めを防止）。
 
 ---
 

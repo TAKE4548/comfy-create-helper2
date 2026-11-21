@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MobileLayout } from '../MobileLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
@@ -346,7 +347,8 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(setIsPresetManagerOpen).toHaveBeenCalledWith(true)
   })
 
-  it('closes the selected mobile set from its labeled icon button', () => {
+  it('closes the selected mobile set from its tab action menu', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
     const removeSet = vi.fn()
     const state = createMockState({
       sets: [{ id: 'default', name: 'Default', checked: true }],
@@ -356,9 +358,8 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     })
     render(<MobileLayout state={state} />)
 
-    const closeButton = screen.getByRole('button', { name: 'Defaultのタブを閉じる' })
-    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
-    fireEvent.click(closeButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Defaultのタブ操作' }))
+    fireEvent.click(screen.getByRole('button', { name: 'このタブを閉じる' }))
     expect(removeSet).toHaveBeenCalledWith('default')
   })
 
@@ -678,7 +679,8 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       const header = screen.getByTestId('mobile-sticky-status-header')
       expect(header).toBeInTheDocument()
       expect(header).toHaveClass('sticky', 'top-0')
-      expect(within(header).getByText('進行中')).toBeInTheDocument()
+      expect(within(header).getByRole('progressbar', { name: '実行中ジョブ進捗' })).toBeInTheDocument()
+      expect(within(header).getByText(/\d+%/)).toBeInTheDocument()
       expect(screen.queryByTestId('mobile-completion-nav-btn')).not.toBeInTheDocument()
 
       // Generation completes: isGeneratingHere becomes false
@@ -738,6 +740,38 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       // Close image sheet
       fireEvent.click(screen.getByTestId('mobile-sheet-close-btn'))
       expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
+    })
+
+    it('[REQ-372/AC-1] Mobile: persistent preview does NOT exist', () => {
+      const state = createMockState({
+        showStrip: true,
+        thumbnailTab: 'history',
+        selectedImg: 'http://example.com/test.png',
+        sortedDisplayImages: ['http://example.com/test.png'],
+        images: ['http://example.com/test.png'],
+        selectedIds: new Set(),
+      })
+      render(<MobileLayout state={state} />)
+
+      expect(screen.queryByTestId('mobile-main-preview')).not.toBeInTheDocument()
+    })
+
+    it('[REQ-372/AC-7] Mobile: empty state displayed when 0 images', () => {
+      const state = createMockState({
+        showStrip: true,
+        thumbnailTab: 'history',
+        selectedImg: null,
+        sortedDisplayImages: [],
+        images: [],
+        selectedIds: new Set(),
+      })
+      render(<MobileLayout state={state} />)
+
+      fireEvent.click(screen.getByRole('button', { name: '履歴' }))
+
+      const historyPanel = screen.getByTestId('mobile-history-panel')
+      expect(historyPanel).toBeVisible()
+      expect(within(historyPanel).getByText('No history images found for this session.')).toBeInTheDocument()
     })
 
     it('[REQ-431/AC-3] syncs download href and save snapshot target after swiping to next image in MobileImageSheet', () => {
@@ -1027,6 +1061,390 @@ describe('MobileLayout - TagChipEditor Integration', () => {
         fireEvent.click(generateBtn)
       }
       expect(generateBtn).toBeInTheDocument()
+    })
+  })
+
+  describe('REQ-435: MobileLayout optimization', () => {
+    const createStageQueryClient = () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+      queryClient.setQueryData(['stage-masters'], [
+        { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 0 },
+        { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
+      ])
+      queryClient.setQueryData(['mapping-masters'], [{
+        id: 10, group_id: null, base_key: 'cfg', name: 'CFG', param_name: 'cfg', input_type: 'float',
+        expected_class_types: null, base_title_patterns: null, sort_order: 0,
+        variants: [
+          { id: 11, master_id: 10, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'cfg_main', extra_title_patterns: null, is_enabled: true },
+          { id: 12, master_id: 10, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'cfg_rough', extra_title_patterns: null, is_enabled: true },
+        ],
+      }])
+      return queryClient
+    }
+
+    const stageMappings = [
+      { id: 1, master_id: 10, variant_id: 11, role: 'cfg_main', param_name: 'cfg', input_type: 'float', display_name: 'Main CFG' },
+      { id: 2, master_id: 10, variant_id: 12, role: 'cfg_rough', param_name: 'cfg', input_type: 'float', display_name: 'Rough CFG' },
+    ]
+
+    beforeEach(() => {
+      useGenerationStore.setState({
+        generationSnapshot: null,
+        nodeProgress: null,
+        generationStartTime: null,
+        vramWaitStatus: null,
+      })
+    })
+
+    afterEach(() => {
+      useGenerationStore.setState({
+        generationSnapshot: null,
+        nodeProgress: null,
+        generationStartTime: null,
+        vramWaitStatus: null,
+      })
+    })
+
+    it('[REQ-435/AC-1] applies slim visuals and non-overlapping >=44px hit-slop tokens on mobile controls', () => {
+      const state = createMockState({
+        sets: [{ id: 'default', name: 'Default', checked: true }],
+        openPresetIds: ['default'],
+        activeSetId: 'default',
+        canUndo: true,
+        canRedo: true,
+      })
+      const { container } = render(<MobileLayout state={state} />)
+
+      const sectionGroup = screen.getByRole('group', { name: '表示セクション' })
+      expect(sectionGroup.className).toContain('py-1.5')
+      for (const label of ['プロンプト', 'パラメータ', '履歴']) {
+        const tab = within(sectionGroup).getByRole('button', { name: label })
+        expect(tab).toHaveAttribute('data-tap-target-exempt')
+        expect(tab.className).toContain('relative')
+        expect(tab.className).toContain('h-8')
+        expect(tab.className).toContain('touch-manipulation')
+        expect(tab.className).toContain('before:-inset-y-[7px]')
+      }
+
+      const undoBtn = container.querySelector('#undo-btn-mobile') as HTMLElement
+      const redoBtn = container.querySelector('#redo-btn-mobile') as HTMLElement
+      expect(undoBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(redoBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(undoBtn.className).toContain('h-7')
+      expect(undoBtn.className).toContain('w-7')
+      expect(undoBtn.className).toContain('before:-inset-2')
+      expect(redoBtn.className).toContain('before:-inset-2')
+      expect(undoBtn.parentElement?.className).toContain('gap-4')
+
+      const manageBtn = container.querySelector('#manage-presets-btn-mobile') as HTMLElement
+      expect(manageBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(manageBtn.className).toContain('h-7')
+      expect(manageBtn.className).toContain('px-2.5')
+      expect(manageBtn.className).toContain('before:-inset-y-[9px]')
+      expect(manageBtn.parentElement?.className).toContain('gap-3')
+
+      const addSetBtn = container.querySelector('#add-set-btn-mobile') as HTMLElement
+      expect(addSetBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(addSetBtn.className).toContain('h-7')
+      expect(addSetBtn.className).toContain('w-7')
+      expect(addSetBtn.className).toContain('before:-inset-[9px]')
+      expect(addSetBtn.parentElement?.className).toContain('gap-3')
+
+      const posTab = screen.getByRole('button', { name: 'Positive Prompt' })
+      expect(posTab).toHaveAttribute('data-tap-target-exempt')
+      expect(posTab.className).toContain('h-7')
+      expect(posTab.className).toContain('px-2.5')
+      expect(posTab.className).toContain('before:-inset-y-[9px]')
+      expect(posTab.parentElement?.className).toContain('py-2')
+
+      const collapseBtn = screen.getByRole('button', { name: /Positive Prompt Input/ })
+      expect(collapseBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(collapseBtn.className).toContain('h-7')
+      expect(collapseBtn.className).toContain('before:-inset-y-2')
+      expect(collapseBtn.className).not.toContain('focus:outline-none')
+
+      const copyBtn = screen.getByRole('button', { name: 'プロンプトをコピー (Main_Positive_Prompt)' })
+      const clipboardMenuBtn = screen.getByRole('button', { name: 'クリップボード・履歴メニュー (Main_Positive_Prompt)' })
+      expect(copyBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(copyBtn.className).toContain('h-7')
+      expect(copyBtn.className).toContain('w-7')
+      expect(copyBtn.className).toContain('before:-inset-[9px]')
+      expect(copyBtn.className).toContain('md:before:hidden')
+      expect(clipboardMenuBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(clipboardMenuBtn.className).toContain('h-7')
+      expect(clipboardMenuBtn.className).toContain('min-w-[32px]')
+      expect(clipboardMenuBtn.className).toContain('before:-inset-x-[7px]')
+      expect(clipboardMenuBtn.className).toContain('before:-inset-y-[9px]')
+      expect(clipboardMenuBtn.className).toContain('md:before:hidden')
+      expect(copyBtn.parentElement?.className).toContain('gap-4')
+      expect(copyBtn.parentElement?.className).toContain('md:gap-1')
+
+      const translateBtn = screen.getByRole('button', { name: '翻訳' })
+      const addAssetBtn = container.querySelector('#add-asset-btn-mobile-Main_Positive_Prompt') as HTMLElement
+      expect(translateBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(translateBtn.className).toContain('h-7')
+      expect(translateBtn.className).toContain('min-w-[38px]')
+      expect(translateBtn.className).toContain('px-2')
+      expect(translateBtn.className).toContain('before:-inset-y-[9px]')
+      expect(translateBtn.className).toContain('before:-inset-x-1')
+      expect(addAssetBtn).toHaveAttribute('data-tap-target-exempt')
+      expect(addAssetBtn.className).toContain('h-7')
+      expect(addAssetBtn.className).toContain('px-2')
+      expect(addAssetBtn.className).toContain('before:-inset-y-[9px]')
+      expect(addAssetBtn.className).toContain('before:inset-x-0')
+      expect(addAssetBtn.parentElement?.className).toContain('gap-3')
+    })
+
+    it('[REQ-435/AC-4] removes inline tab close button and closes single tab from PresetTabCloseMenu', () => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+      const removeSet = vi.fn()
+      const state = createMockState({
+        sets: [{ id: 'default', name: 'Default', checked: true }],
+        openPresetIds: ['default'],
+        activeSetId: 'default',
+        removeSet,
+      })
+      render(<MobileLayout state={state} />)
+
+      expect(screen.queryByRole('button', { name: 'Defaultのタブを閉じる' })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Defaultのタブ操作' }))
+      const closeSingleBtn = screen.getByRole('button', { name: 'このタブを閉じる' })
+      fireEvent.click(closeSingleBtn)
+
+      expect(removeSet).toHaveBeenCalledTimes(1)
+      expect(removeSet).toHaveBeenCalledWith('default')
+      expect(screen.queryByRole('button', { name: 'このタブを閉じる' })).not.toBeInTheDocument()
+    })
+
+    it('[REQ-435/AC-6] supports single close and multi-tab close actions in PresetTabCloseMenu', () => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+      const removeSet = vi.fn()
+      const handleClosePresetTabs = vi.fn().mockResolvedValue(true)
+      const state = createMockState({
+        sets: [
+          { id: '101', name: 'Set A', checked: true },
+          { id: '102', name: 'Set B', checked: true },
+          { id: '103', name: 'Set C', checked: true },
+        ],
+        openPresetIds: ['101', '102', '103'],
+        activeSetId: '102',
+        removeSet,
+        handleClosePresetTabs,
+      })
+      render(<MobileLayout state={state} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set Bのタブ操作' }))
+      fireEvent.click(screen.getByRole('button', { name: '左のタブをすべて閉じる' }))
+      expect(handleClosePresetTabs).toHaveBeenCalledWith('102', 'left')
+      expect(removeSet).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set Bのタブ操作' }))
+      fireEvent.click(screen.getByRole('button', { name: 'このタブを閉じる' }))
+      expect(removeSet).toHaveBeenCalledWith('102')
+    })
+
+    it('[REQ-435/AC-7] consolidates progress to a single running-job bar in sticky header and removes section bars', () => {
+      useGenerationStore.setState({
+        generationSnapshot: {
+          version: 1,
+          epoch: 'e1',
+          revision: 1,
+          normal_group_id: 'g1',
+          batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [
+            { job_id: 'j1', request_id: 'r1', prompt_id: 'p1', session_id: 'client-1', scope: 'normal', batch_id: 'b1', normal_group_id: 'g1', project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, outputs: [], failure: null },
+            { job_id: 'j2', request_id: 'r2', prompt_id: 'p2', session_id: 'client-1', scope: 'normal', batch_id: 'b1', normal_group_id: 'g1', project_id: null, status: 'running', started_at: null, finished_at: null, node: { id: '3', name: 'KSampler', value: 3, max: 5 }, outputs: [], failure: null },
+            { job_id: 'j3', request_id: 'r3', prompt_id: null, session_id: 'client-1', scope: 'normal', batch_id: 'b1', normal_group_id: 'g1', project_id: null, status: 'queued', started_at: null, finished_at: null, node: null, outputs: [], failure: null },
+          ],
+        } as any,
+      })
+
+      const { rerender } = render(<MobileLayout state={createMockState({ isGeneratingHere: true, totalQueueCount: 2 })} />)
+
+      const bars = screen.getAllByRole('progressbar')
+      expect(bars).toHaveLength(1)
+      expect(bars[0]).toHaveAttribute('data-testid', 'mobile-running-job-progress-bar')
+      expect(bars[0]).toHaveAttribute('aria-valuenow', '60')
+      expect(bars[0].style.width).toBe('60%')
+
+      const progressSection = screen.getByTestId('mobile-progress-section')
+      expect(within(progressSection).queryByRole('progressbar')).toBeNull()
+      expect(within(progressSection).queryByText(/全体進捗:/)).toBeNull()
+      expect(within(progressSection).queryByText(/実行中:/)).toBeNull()
+
+      // Ready state also removes redundant 0% bar
+      useGenerationStore.setState({ generationSnapshot: null, nodeProgress: null })
+      rerender(<MobileLayout state={createMockState({ isGeneratingHere: false, totalQueueCount: 0 })} />)
+      expect(screen.queryByRole('progressbar')).toBeNull()
+      expect(within(screen.getByTestId('mobile-progress-section')).queryByText('0%')).toBeNull()
+    })
+
+    it('[REQ-435/AC-8] displays n/m overall progress in sticky header and keeps elapsed, ETA, Queue, and completion nav', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-10-10T12:00:30Z'))
+
+      const mkJob = (id: string, status: 'succeeded' | 'running' | 'queued', startedAt: string | null = null) => ({
+        job_id: id,
+        request_id: id,
+        prompt_id: id,
+        session_id: 'client-1',
+        scope: 'normal' as const,
+        batch_id: 'b1',
+        normal_group_id: 'g1',
+        project_id: null,
+        status,
+        started_at: startedAt,
+        finished_at: null,
+        node: status === 'running' ? { id: '3', name: 'KSampler', value: 1, max: 2 } : null,
+        outputs: [],
+        failure: null,
+      })
+
+      useGenerationStore.setState({
+        generationSnapshot: {
+          version: 1,
+          epoch: 'e1',
+          revision: 1,
+          normal_group_id: 'g1',
+          batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [
+            mkJob('j1', 'running', '2026-10-10T12:00:20Z'),
+            mkJob('j2', 'queued'),
+            mkJob('j3', 'queued'),
+          ],
+        } as any,
+      })
+
+      const setIsJobModalOpen = vi.fn()
+      const { rerender } = render(<MobileLayout state={createMockState({ isGeneratingHere: true, totalQueueCount: 3, setIsJobModalOpen })} />)
+
+      expect(screen.getByTestId('mobile-overall-progress-text')).toHaveTextContent('1/3')
+      const progressSection = screen.getByTestId('mobile-progress-section')
+      expect(within(progressSection).getByText('経過: 10秒')).toBeInTheDocument()
+      const queueLink = within(progressSection).getByText('Queue: 3')
+      fireEvent.click(queueLink)
+      expect(setIsJobModalOpen).toHaveBeenCalledWith(true)
+
+      useGenerationStore.setState({
+        generationSnapshot: {
+          version: 1,
+          epoch: 'e1',
+          revision: 2,
+          normal_group_id: 'g1',
+          batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [
+            mkJob('j1', 'succeeded'),
+            mkJob('j2', 'running', '2026-10-10T12:00:00Z'),
+            mkJob('j3', 'queued'),
+          ],
+        } as any,
+      })
+      rerender(<MobileLayout state={createMockState({ isGeneratingHere: true, totalQueueCount: 2, setIsJobModalOpen })} />)
+      expect(screen.getByTestId('mobile-overall-progress-text')).toHaveTextContent('2/3')
+      expect(within(screen.getByTestId('mobile-progress-section')).getByText(/残り約:/)).toBeInTheDocument()
+
+      useGenerationStore.setState({
+        generationSnapshot: {
+          version: 1,
+          epoch: 'e1',
+          revision: 3,
+          normal_group_id: 'g1',
+          batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [
+            mkJob('j1', 'succeeded'),
+            mkJob('j2', 'succeeded'),
+            mkJob('j3', 'succeeded'),
+          ],
+        } as any,
+      })
+      rerender(<MobileLayout state={createMockState({ isGeneratingHere: false, totalQueueCount: 0, setIsJobModalOpen })} />)
+      expect(screen.getByTestId('mobile-completion-nav-btn')).toHaveTextContent('生成完了: 最新画像を表示')
+    })
+
+    it('[REQ-435/AC-13] enables stage grouping on mobile ParamPanel without adding stage collapse to prompt panel', () => {
+      const queryClient = createStageQueryClient()
+      const state = createMockState({
+        selectedWorkflowId: 101,
+        paramMappings: stageMappings,
+        paramValues: {
+          Main_Positive_Prompt: '1girl',
+          cfg_main: '7.5',
+          cfg_rough: '5.0',
+        },
+      })
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MobileLayout state={state} />
+        </QueryClientProvider>,
+      )
+
+      const promptPanel = screen.getByTestId('mobile-prompt-panel')
+      expect(promptPanel.querySelector('.stage-input-group__toggle')).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: 'パラメータ' }))
+      const paramsPanel = screen.getByTestId('mobile-parameters-panel')
+      expect(within(paramsPanel).getByRole('button', { name: 'Main (main)' })).toBeInTheDocument()
+      expect(within(paramsPanel).getByRole('button', { name: 'Rough (rough)' })).toBeInTheDocument()
+    })
+
+    it('[REQ-435/AC-14] toggles mobile parameter stage collapse independently', () => {
+      const queryClient = createStageQueryClient()
+      const state = createMockState({
+        selectedWorkflowId: 102,
+        paramMappings: stageMappings,
+        paramValues: { cfg_main: '7.5', cfg_rough: '5.0' },
+      })
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MobileLayout state={state} />
+        </QueryClientProvider>,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'パラメータ' }))
+      const mainBtn = screen.getByRole('button', { name: 'Main (main)' })
+      const roughBtn = screen.getByRole('button', { name: 'Rough (rough)' })
+      expect(mainBtn).toHaveAttribute('aria-expanded', 'true')
+      expect(roughBtn).toHaveAttribute('aria-expanded', 'true')
+
+      fireEvent.click(roughBtn)
+      expect(roughBtn).toHaveAttribute('aria-expanded', 'false')
+      expect(mainBtn).toHaveAttribute('aria-expanded', 'true')
+      expect(document.getElementById(roughBtn.getAttribute('aria-controls')!)).toHaveAttribute('hidden')
+    })
+
+    it('[REQ-435/AC-17] preserves parameter values while stage group is collapsed and re-expanded on mobile', () => {
+      const queryClient = createStageQueryClient()
+      const state = createMockState({
+        selectedWorkflowId: 103,
+        paramMappings: stageMappings,
+        paramValues: { cfg_main: '7.5', cfg_rough: '5.0' },
+      })
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MobileLayout state={state} />
+        </QueryClientProvider>,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'パラメータ' }))
+      const roughBtn = screen.getByRole('button', { name: 'Rough (rough)' })
+      const roughInput = document.getElementById('param-mobile-cfg_rough') as HTMLInputElement
+      expect(roughInput.value).toBe('5.0')
+
+      fireEvent.click(roughBtn)
+      expect(roughBtn).toHaveAttribute('aria-expanded', 'false')
+      expect((document.getElementById('param-mobile-cfg_rough') as HTMLInputElement).value).toBe('5.0')
+
+      fireEvent.click(roughBtn)
+      expect(roughBtn).toHaveAttribute('aria-expanded', 'true')
+      expect((document.getElementById('param-mobile-cfg_rough') as HTMLInputElement).value).toBe('5.0')
     })
   })
 })

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react'
-import { Clock, Trash2, MessageSquarePlus, Download, Check, ImageOff, X } from 'lucide-react'
+import { Clock, Trash2, MessageSquarePlus, Download, Check, ImageOff, X, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SnapshotSummary, Lora, TagSet } from '../../../api/types'
 import type { UseMultiSelectReturn } from '../../../hooks/useMultiSelect'
 
@@ -66,6 +66,21 @@ export function SnapshotGalleryView({
   const [workflowSearch, setWorkflowSearch] = useState('')
   const [loraSearch, setLoraSearch] = useState('')
   const [tagSetSearch, setTagSetSearch] = useState('')
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false)
+
+  const activeFilterCount =
+    (selectedWorkflowId !== null ? 1 : 0) +
+    (selectedLoraId !== null ? 1 : 0) +
+    (selectedTagSetId !== null ? 1 : 0)
+
+  const clearAllFilters = () => {
+    setSelectedWorkflowId(null)
+    setSelectedLoraId(null)
+    setSelectedTagSetId(null)
+    setWorkflowSearch('')
+    setLoraSearch('')
+    setTagSetSearch('')
+  }
 
   const sortedSnapshots = useMemo(() => {
     if (!snapshots) return []
@@ -112,17 +127,81 @@ export function SnapshotGalleryView({
     return () => observer.unobserve(sentinel)
   }, [snapshots, snapshotLimit, setSnapshotLimit])
 
+  const renderSortButtons = (mobile: boolean) => (
+    <div className={`${mobile ? 'flex' : 'hidden md:flex'} rounded-lg border border-[rgba(255,255,255,0.08)]`}>
+      {(['desc', 'asc'] as const).map((order) => (
+        <button
+          key={order}
+          type="button"
+          data-tap-target-exempt={mobile ? true : undefined}
+          aria-pressed={sortOrder === order}
+          onClick={() => setSortOrder(order)}
+          className={`${
+            mobile
+              ? "relative h-8 md:h-auto touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-1.5 md:before:hidden px-2 whitespace-nowrap"
+              : 'px-3 py-1.5'
+          } first:rounded-l-lg last:rounded-r-lg text-xs font-medium transition-colors ${
+            sortOrder === order
+              ? 'bg-surface-2 text-zinc-200'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          {order === 'desc' ? '新しい順' : '古い順'}
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <>
+      {/* Mobile-only always-visible filter toggle & sort bar */}
+      <div
+        data-testid="history-mobile-filter-bar"
+        className="flex md:hidden items-center justify-between gap-2 px-3 py-1.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/30"
+      >
+        <button
+          id="history-mobile-filter-toggle"
+          type="button"
+          aria-expanded={isMobileFilterOpen}
+          aria-controls="history-filter-controls"
+          data-tap-target-exempt
+          onClick={() => setIsMobileFilterOpen((prev) => !prev)}
+          className="relative h-8 md:h-auto touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[7px] md:before:hidden flex items-center gap-1.5 px-2.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-xs font-medium text-zinc-200 whitespace-nowrap shrink-0"
+        >
+          <SlidersHorizontal size={13} aria-hidden="true" />
+          <span>フィルター</span>
+          {activeFilterCount > 0 && (
+            <span data-testid="history-active-filter-count" className="text-accent-green">
+              ({activeFilterCount}件)
+            </span>
+          )}
+          {isMobileFilterOpen ? (
+            <ChevronUp size={13} aria-hidden="true" />
+          ) : (
+            <ChevronDown size={13} aria-hidden="true" />
+          )}
+        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {renderSortButtons(true)}
+          <span className="text-xs text-zinc-500 whitespace-nowrap">
+            {sortedSnapshots.length}件
+          </span>
+        </div>
+      </div>
+
       {/* Workflow Filter (snapshots only) */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
+      <div
+        id="history-filter-controls"
+        className={`${isMobileFilterOpen ? 'flex' : 'hidden'} md:flex flex-wrap items-center gap-2 sm:gap-3 px-3 md:px-5 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface/30`}
+      >
         <input
           type="search"
           aria-label="ワークフローを検索"
           value={workflowSearch}
           onChange={(event) => setWorkflowSearch(event.target.value)}
           placeholder="ワークフローを検索"
-          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+          className="min-h-11 md:min-h-0 md:h-8 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
         />
         <select
           id="history-workflow-filter"
@@ -144,7 +223,7 @@ export function SnapshotGalleryView({
           value={loraSearch}
           onChange={(event) => setLoraSearch(event.target.value)}
           placeholder="LoRAを検索"
-          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+          className="min-h-11 md:min-h-0 md:h-8 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
         />
         <select
           id="history-lora-filter"
@@ -166,7 +245,7 @@ export function SnapshotGalleryView({
           value={tagSetSearch}
           onChange={(event) => setTagSetSearch(event.target.value)}
           placeholder="タグセットを検索"
-          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+          className="min-h-11 md:min-h-0 md:h-8 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
         />
         <select
           id="history-tagset-filter"
@@ -185,47 +264,32 @@ export function SnapshotGalleryView({
         {(selectedWorkflow || selectedLora || selectedTagSet) && (
           <div className="flex flex-wrap gap-2" aria-label="有効な絞り込み">
             {selectedWorkflow && (
-              <button type="button" onClick={() => setSelectedWorkflowId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+              <button type="button" onClick={() => setSelectedWorkflowId(null)} className="min-h-11 md:min-h-0 md:h-8 inline-flex items-center gap-1 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
                 Workflow: {selectedWorkflow.name} <X aria-hidden="true" size={12} />
               </button>
             )}
             {selectedLora && (
-              <button type="button" onClick={() => setSelectedLoraId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+              <button type="button" onClick={() => setSelectedLoraId(null)} className="min-h-11 md:min-h-0 md:h-8 inline-flex items-center gap-1 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
                 LoRA: {getLoraFilterLabel(selectedLora)} <X aria-hidden="true" size={12} />
               </button>
             )}
             {selectedTagSet && (
-              <button type="button" onClick={() => setSelectedTagSetId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+              <button type="button" onClick={() => setSelectedTagSetId(null)} className="min-h-11 md:min-h-0 md:h-8 inline-flex items-center gap-1 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
                 TagSet: {selectedTagSet.name} <X aria-hidden="true" size={12} />
               </button>
             )}
           </div>
         )}
 
-        <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
-          {(['desc', 'asc'] as const).map((order) => (
-            <button
-              key={order}
-              type="button"
-              onClick={() => setSortOrder(order)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                sortOrder === order
-                  ? 'bg-surface-2 text-zinc-200'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              {order === 'desc' ? '新しい順' : '古い順'}
-            </button>
-          ))}
-        </div>
+        {renderSortButtons(false)}
 
-        <span className="text-xs text-zinc-600 ml-auto sm:ml-0">
+        <span className="hidden md:inline text-xs text-zinc-600 ml-auto sm:ml-0">
           {sortedSnapshots.length} snapshots
         </span>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 md:p-5">
         <div data-testid="snapshot-grid" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleSnapshots.map((snap) => {
             const isSelected = multiSelect.isSelected(snap.id)
@@ -366,7 +430,20 @@ export function SnapshotGalleryView({
           {sortedSnapshots.length === 0 && (
             <div className="col-span-full flex flex-col items-center py-20 text-zinc-600">
               <Clock size={40} strokeWidth={1} />
-              <p className="mt-3 text-sm">No snapshots yet.</p>
+              {activeFilterCount > 0 ? (
+                <>
+                  <p className="mt-3 text-sm">条件に一致するスナップショットがありません。</p>
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="mt-3 min-h-11 md:min-h-0 md:h-8 px-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-xs text-zinc-200 hover:text-white transition-colors"
+                  >
+                    フィルターを解除
+                  </button>
+                </>
+              ) : (
+                <p className="mt-3 text-sm">No snapshots yet.</p>
+              )}
             </div>
           )}
         </div>

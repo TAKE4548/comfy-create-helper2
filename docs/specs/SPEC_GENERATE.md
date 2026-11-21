@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
 **バージョン**: 2.10
-**最終更新**: 2026-11-14
+**最終更新**: 2026-11-21
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-383設計](../design/REQ-383.md) / [REQ-383検証計画](../design/REQ-383-test-plan.md) / [REQ-427設計](../design/REQ-427.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-383設計](../design/REQ-383.md) / [REQ-383検証計画](../design/REQ-383-test-plan.md) / [REQ-427設計](../design/REQ-427.md) / [REQ-435設計](../design/REQ-435.md)
 
 ---
 
@@ -44,9 +44,15 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
-デスクトップ入力ペインは Prompt と Parameter を水平仕切りで分け、それぞれ独立したスクロール領域とする。各領域は既存のマッピングのみを対象にし、ワークフローstageの順序でstage groupを連続表示する。各groupの見出しは領域内スクロールに追従し、次groupが上端へ到達すると表示見出しを切り替える。stage groupingはDesktopのPrompt/Parameterで有効にする。ParamPanelの `stageGrouping` は既定値 `false` とし、既存Mobile Prompt tabsの表示・操作を変更しない。
+デスクトップ入力ペインは Prompt と Parameter を水平仕切りで分け、それぞれ独立したスクロール領域とする。各領域は既存のマッピングのみを対象にし、ワークフローstageの順序でstage groupを連続表示する。各groupの見出しは領域内スクロールに追従し、次groupが上端へ到達すると表示見出しを切り替える。stage groupingはDesktopのPrompt/ParameterおよびMobileのParameter（`MobileLayout` の `ParamPanel` に `stageGrouping={true}` と `workflowId` を渡す、REQ-435）で有効にする。`ParamPanel` の `stageGrouping` prop 既定値は `false` を維持し、Mobile Prompt（REQ-434 でドロップダウン切替となるためステージグループ化・折り畳み対象外）や既存未指定呼び出し元（`AdaptiveWorkflowWiring` 等）の表示・操作を変更しない。
 
 入力ペインの上端には物理paddingを置かず、sticky見出しは高さ36px・不透明背景とする。上端の余白が必要な場合は本文側に設ける。通常時とgroup境界追従時の見出し表示、および入力欄を覆わないことを維持する。工程見出しの可視文字はStageMaster.nameのみとし、stageKeyを重ねて表示しない。nameが空白の場合は既定fallbackを使い、長名・同名の識別情報はARIA、title、data属性で提供する。schemaに独立したstage display_nameはなく、Prompt項目の `WorkflowMapping.display_name` とは別契約である。
+
+- **ステージ折り畳みと `localStorage` 永続化 (`StageInputGroup`, `useStageCollapseState`, REQ-435)**:
+  - Desktop の Prompt 欄、および Desktop / Mobile の Parameters 欄（`collapsible={true}`）では、36px sticky 見出し内の全幅トグルボタン（クリック／タップ／`Enter`／`Space`）で該当ステージの入力欄だけを折り畳み・展開できる（Mobile Prompt 欄は対象外）。ボタンは開閉アイコンと `aria-expanded` / `aria-controls` を提供し、Mobile（幅 767px 以下）では `::before` により上下 4px 拡張して 44px の有効タップ領域を確保する。
+  - 本体は `hidden`（`display: none`）で非表示化し、Desktop で折り畳んだ状態でも `<section>`（36px）と sticky 見出しの切り替え・非被覆を維持する。入力値（`paramValues` / `promptChips` / `seedMode` / `seed`）は `useGenerationStore` に保持されるため、折り畳んだステージの値も生成要求・ParamSync 同期・プリセット切替にそのまま反映され、消失・改変されない。
+  - 開閉状態はブラウザーの `localStorage` キー `prompt-surgeon-stage-collapsed-v1` に `{ version: 1, collapsed: Record<string, string[]> }` 形式で永続化する（端末間同期なし）。レコードキーは `${workflowId}:${pane}`（`pane` は `'prompt' | 'parameters'`）とし、ワークフローごと・欄ごとに独立管理・復元する。
+  - 初回表示時（キー未登録または該当 `${workflowId}:${pane}` 不在）は全ステージを展開状態（`collapsed = false`）とする。ワークフロー変更等で存在しなくなったステージのキー（stale keys）が保存されていても照合されず安全に無視し、トグル保存時に有効キー一覧があれば自動整理する。破損 JSON・バージョン不一致・`QuotaExceededError` 時も例外を送出せず全展開へ安全フォールバックする。
 
 ### 2-1. ヘッダー
 
@@ -99,7 +105,7 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 ### 2-5. パラメータ入力パネル (`ParamPanel.tsx`)
 
-`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` / `image` の既存マッピングだけを動的生成する。Desktopでは所属stageごとに連続groupへ配置し、Prompt領域とは独立したスクロールとsticky見出しの境界切替を行う。未マッピングのstage/roleの入力欄は追加しない。`stageGrouping` は既定値 `false` とし、Mobileなど既存呼び出し元の表示を変えない。
+`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` / `image` の既存マッピングだけを動的生成する。DesktopおよびMobile（`MobileLayout` から `stageGrouping={true}` と `workflowId` を指定、REQ-435）では所属stageごとに連続groupへ配置し、ステージ見出し表示と折り畳み（`localStorage` キー `prompt-surgeon-stage-collapsed-v1` の `${workflowId}:parameters` に永続化、初期全展開・stale key 無視、契約詳細は §2 参照）を提供する。Desktop では Prompt 領域とは独立したスクロールと sticky 見出しの境界切替を行い、Mobile では同一ロール・異ステージのパラメータを所属ステージごとに区別可能とする。未マッピングのstage/roleの入力欄は追加しない。`stageGrouping` prop 自体の既定値は `false` とし、`AdaptiveWorkflowWiring` 等、`stageGrouping` 未指定の既存呼び出し元の表示を変えない。
 
 - **サンプラ・スケジューラ選択 UI**: ComfyUI の `/object_info` から動的取得（オフライン時は定数フォールバック）。
 - **動的 LoRA スタック UI (`LoraStackEditor.tsx`)**: 最大10スロットの動的追加・削除・詰め直し、説明文照合表示。
@@ -134,10 +140,11 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
     - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleSelectPresetTab` の先頭で `flushAutoSave` を同期実行する。進行中のデバウンスタイマーを即時キャンセルし、最新ドラフトをメモリへ反映して保存要求を開始する。既存の切替契約はPUTのACK待機を意味しない。
     - 切替先プリセットが他端末で更新されている場合（`updated_at` の進み）、自端末で未編集（Clean）ならサーバー最新版を自動ロードし、編集中の未保存状態（Dirty）なら即座に競合解消モーダルを表示する。
     - 全プリセットの更新タイムスタンプ（`presetUpdatedAtRef`）をバックグラウンドポーリング時にも継続追跡し、非アクティブなプリセットに対する他端末更新の検知脱落を根絶。
-  - **プリセットタブ一括クローズ ([REQ-402](../design/REQ-402.md))**:
-    - `PresetTabItem` は通常の選択・単件クローズを維持し、各タブの `PresetTabCloseMenu` は右クリック、タブ名領域の500ms長押し、または ellipsis の通常タップから開く。いずれの入口も同じメニューと対象集合を使い、メニュー表示だけでは選択・入力値を変更しない。画面幅767px以下では下部シート、768px以上ではデスクトップメニューを表示する。portalによりナビゲーション等より上の重なり順で表示し、長押し後の解放クリックは一度だけ無視する。
+  - **プリセットタブのメニュー統合と一括クローズ ([REQ-402](../design/REQ-402.md), [REQ-435](../design/REQ-435.md))**:
+    - `PresetTabItem` から独立した閉じる（`×`）ボタンを廃止し、各タブの操作ボタンを統合メニューボタン（`data-preset-menu-trigger`、`<MoreHorizontal />`）1つのみに統合する。各タブの `PresetTabCloseMenu` は、この統合メニューボタンのタップ／クリック、タブの右クリック（`onContextMenu`）、またはタブ名領域の500ms長押し（`touch`/`pen`、8px移動キャンセル）のいずれから開いても同じメニューと対象集合を使い、メニュー表示だけでは選択タブや入力値を変更しない。画面幅767px以下では下部シート、768px以上ではデスクトップメニュー（`role="menu"`）を表示する。portalによりナビゲーション等より上の重なり順で表示し、長押し後の解放クリックは一度だけ無視する。
+    - メニュー先頭（インデックス0）には単件操作の **「このタブを閉じる」** を配置し、続けて一括クローズ3項目（「左のタブをすべて閉じる」「右のタブをすべて閉じる」「他のタブを閉じる」）を並べる。「このタブを閉じる」は `pending` 中のみ無効化し、選択するとメニューを閉じたうえで呼び出し元の単件保存・クローズ規則（`removeSet`）を実行する。キーボード操作（Desktop の `ArrowDown`/`ArrowUp`/`Home`/`End`/`Escape`、Mobile の `Tab` トラップ）は「このタブを閉じる」を含む全有効項目を巡回する。
     - 基準タブCに対する「左のタブをすべて閉じる」は表示順で左にある全タブ（例: A B）のみ、「右のタブをすべて閉じる」は右にある全タブ（例: D E）のみ、「他のタブを閉じる」は基準タブ以外（例: A B D E）を対象とする。対象集合は現在開いているタブ（`sets` のうち `openPresetIds` に含まれるもの）から作り、画面外の開いたタブも含む。閉じているプリセットは対象にしない。基準タブCは常に残し、targetが空になる操作は無効とする。
-    - 一括クローズは各対象の最新ドラフト保存ACKを待ち、全targetが安全な場合にだけタブを閉じる。保存失敗、409、通信断、部分的なサーバー保存成功を含む失敗では、全タブとdraftを保持し、失敗原因を表示して既存の復旧経路へ移る。503や通信断では返された実際のエラー理由を示し、同じ一括クローズ操作を再試行できることを案内する。409では既存の競合モーダルが原因と解決選択肢（サーバー最新版を採用、この端末の編集で上書き、別名で両方保存）を示す。成功したサーバー保存をロールバックしない。active tabが残る場合は維持し、閉じる場合は基準タブをactiveにする。閉じる操作はタブを非表示にするだけでプリセットを削除せず、管理画面から再表示できる。open/active状態は再訪時に復元する。メニューは外側クリックまたはEscapeで閉じ、通常のselect/check/単件close/横scrollを維持する。
+    - 一括クローズは各対象の最新ドラフト保存ACKを待ち、全targetが安全な場合にだけタブを閉じる。保存失敗、409、通信断、部分的なサーバー保存成功を含む失敗では、全タブとdraftを保持し、失敗原因を表示して既存の復旧経路へ移る。503や通信断では返された実際のエラー理由を示し、同じ一括クローズ操作を再試行できることを案内する。409では既存の競合モーダルが原因と解決選択肢（サーバー最新版を採用、この端末の編集で上書き、別名で両方保存）を示す。成功したサーバー保存をロールバックしない。active tabが残る場合は維持し、閉じる場合は基準タブをactiveにする。閉じる操作はタブを非表示にするだけでプリセットを削除せず、管理画面から再表示できる。open/active状態は再訪時に復元する。メニューは外側クリックまたはEscapeで閉じ、通常のselect/check/横scrollを維持する。
   - **未保存ガード (`isDirty`)**:
     - ローカル編集がない状態（`!isDirty`）で他端末による更新（`updated_at` の進み）を受信した場合は、`currentStore.loadPresetData` によりUIおよびストアを即時自動同期。
     - ローカルに未保存の編集がある状態（`isDirty`）で他端末の更新を受信した場合、ローカルドラフトを勝手に上書きせず、競合状態へ移行。
@@ -327,10 +334,14 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
   2. **画像ボトムシート (`MobileImageSheet`)**: サムネイルタップにより下端起点ボトムシート（`max-h-[88dvh]`）が展開し、元の縦横比（`max-h-[60dvh] object-contain`）で拡大確認。
   3. **全画面ビューア**: ボトムシート内画像タップで背景黒（`bg-black`）のエッジツーエッジ全画面ビューアへ切り替わり、没入閲覧を提供。
 
-### 3-2. 最上部固定ステータスヘッダーと生成完了導線 (`MobileLayout.tsx`, REQ-372)
+### 3-2. 最上部固定ステータスヘッダーと生成完了導線 (`MobileLayout.tsx`, REQ-372, REQ-435)
 
 - 画面最上部に24px高のステータスヘッダー（`data-testid="mobile-sticky-status-header"`）を常時固定配置する。
-- **生成中進捗表示**: ノード進捗バー、バッチ進捗バー、経過秒数、ETA、およびキュー数をリアルタイム表示。
+- **生成中進捗表示（単一進捗バー＋`n/m` 文字表示、REQ-435）**:
+  - 生成中（`displayProgressActive === true`）は、画面上唯一の進捗バー（`[role="progressbar"]`）として、上部ステータスヘッダー下端に **実行中 job の進捗バー 1 本のみ**（`data-testid="mobile-running-job-progress-bar"`、`displayNodePercentage`）を描画する。補助ステータス行（`data-testid="mobile-progress-section"`）にあった重複する全体進捗バー・詳細ノード進捗バーは描画せず、1 行のメタ情報（スピナー、経過秒数、`ETA`、`Queue` 件数クリック導線）のみを表示する。
+  - ヘッダー内に全体進捗テキスト **`n/m`**（`data-testid="mobile-overall-progress-text"`、`selectMobileOverallProgress`）、実行中ノード名、`{Math.round(displayNodePercentage)}%`、および `ETA` をリアルタイム表示する。
+  - `n/m` の算出規則（§2-9 の進捗定義と整合）: `m` は今回の生成要求の有効 job 総数（`cancelled` / `released` / `unconfirmed` は除外し、キャンセル発生時は `m` を減算して残存 job で再計算）、`finished` は `succeeded` + `failed` の合計（失敗 job も進捗上の完了として数える）、`n` は完了件数＋1（全件完了時は `m/m`）。`m <= 0` のときは `n/m` を表示しない（`generationSnapshot` 不在時は `activeBatch` から同等にフォールバック算出）。
+  - VRAM 解放待ち・他セッション生成中・Ready 状態の表示・操作導線は維持する（Ready 時も余分な 0% 進捗バーを出さない）。また、Desktop（`DesktopLayout.tsx`、幅 768px 以上）の進捗表示（全体バー＋ノードバー＋経過時間＋ETA）は変更しない。
 - **生成完了通知と導線**: ジョブ完了直後、ヘッダー右側に「生成完了: 最新画像を表示」アクション導線を表示。タップするとアクティブセグメントが `history`（履歴タブ）へ自動切替され、最新の生成画像を選択・スクロール表示する。
 
 ### 3-3. 履歴3列正方形グリッド (`GenerationGallerySection.tsx`, REQ-372)
@@ -398,6 +409,11 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 プリセットマネージャーはmax-h-[75dvh]のボトムシートとして動作し、Safari下部アドレスバーによる被りを抑止するとともに、全選択/解除・保存・Scene Generator等のアクションバーを最下部にピン留め固定する。
 パラメータパネル（ParamPanel.tsx）はラベル幅とセレクト/ステッパーを1行に収めるスマートレイアウトを採用し、アセット追加モーダル（AddAssetModal.tsx）はパディングを14px（p-3.5）に引き締めてモバイル表示を最適化する。
 リソースホバーモニター（ResourceHoverMonitor.tsx）は、640px以上で資源チップへのホバー時に幅250pxのリソース詳細カード（hover型、`HeaderDropdown` の `hoverBridge` 付き）を、640px未満でVRAMピル（幅96px）のタップ時に幅240pxのリソース詳細オーバーレイ（click型）を表示する。いずれのパネルも `HeaderDropdown`（§4-4-1）でbodyへportalし、fixedでヘッダー下端＋6pxに配置する。重なり順は `--z-header-menu`（60）により、ボトムナビ（50）より前面・共通Modal（100）より背面とし、ヘッダータイトルの隠蔽やモーダルとの衝突を防止する。ActionBarは高さ54pxの共通bottom navigationとsafe-area上部に常時配置する。操作対象は44px以上とする。デスクトップのホバーカードは内容を `role=group`（`aria-label="リソース詳細"`）で包み、ツールチップ用の role は付与しない。両パネルの末尾には「ComfyUI メモリ解放」ボタン群（`data-testid="resource-free-memory"`）を置く（REQ-412）。このメモリ解放操作の有効条件・理由文言・送信経路は [SPEC_SETTINGS.md のsystemタブ（§3）](SPEC_SETTINGS.md#3-レイアウトと状態5タブ) のComfyUI行（「ComfyUIのメモリ解放」）と共通である。
+
+- **モバイル Hit-Slop 密度整理と Desktop コンパクト寸法 (REQ-435)**:
+  - `index.css`（`@media (max-width: 767px)`）のグローバル 44px 規則は他画面のタップ領域保護のため維持しつつ、Mobile Generate の密度整理対象（セクションタブ 3 ボタン、プリセットタブ外枠／選択／チェック／統合メニューボタン、プロファイル行 `#undo-btn-mobile` / `#redo-btn-mobile` / `#manage-presets-btn-mobile` / `#add-set-btn-mobile`、プロンプトタブ、プロンプトツールバー開閉・`PromptSectionClipboardMenu`・翻訳・`#add-asset-btn-mobile-*`）には `data-tap-target-exempt` を付与し、視覚外形の高さを 28px（`h-7`）または 32px（`h-8`）へスリム化する。
+  - 各要素は `relative touch-manipulation before:absolute before:content-['']` による透明 Hit-Slop 疑似要素（`border` 付き要素は padding-box 基準で上下左右 2px を補正）で **有効タップ領域 44×44px 以上** を維持する。幅広ボタン／タブは横拡張 `0`（`before:inset-x-0`）、アイコン専用ボタン同士は親コンテナの `gap >= 2 × 横拡張量` として隣接タップ領域の非重複を保証し、横スクロール列の `py-2` / `py-1.5` 確保と角丸ラッパーからの `overflow-hidden` 除去で Hit-Slop の切り詰めを防ぐ。対象ボタンはすべて `:focus-visible` による可視フォーカスリングを維持する。
+  - Desktop（幅 768px 以上、`md:`）に残っていたモバイル向けの 44px 最小寸法・余白は除去し、44px 未満のコンパクト寸法とする（`PresetTabItem` 外枠 28px・内部 24px / `md:before:hidden`、`#desktop-preset-tabs-bar` 約 40px、右側アクションボタン `#queue-open-btn` / `#generate-btn` / `#save-snapshot-btn` 36px）。なお、共通 `TagChipEditor` / `TagChip` のチップ寸法・余白は REQ-435 の変更対象外とする。
 
 ### 3-9. 提供機能
 
@@ -606,8 +622,8 @@ pages/GeneratePage/
   components/
     DesktopLayout.tsx           — PC/タブレット用 2カラムレイアウト（配置特化）
     MobileLayout.tsx            — モバイル用シングルカラムレイアウト（配置特化）
-    PresetTabItem.tsx            — 個別タブの選択・単件クローズ（REQ-402）
-    PresetTabCloseMenu.tsx       — 右クリック・長押し・ellipsisから開く一括クローズメニュー（REQ-402）
+    PresetTabItem.tsx            — 個別タブの選択・統合メニューボタン（REQ-402, REQ-435）
+    PresetTabCloseMenu.tsx       — 右クリック・長押し・統合メニューボタンから開くタブ操作メニュー（単件・一括クローズ、REQ-402, REQ-435）
     GenerateParallelPreview.tsx — 連続横スクロールリールプレビュー・端点ジャンプ・共有コントロール（REQ-383）
     AuditPanel.tsx              — LLM 診断パネル
     ParamPanel.tsx              — パラメータ入力フォーム群

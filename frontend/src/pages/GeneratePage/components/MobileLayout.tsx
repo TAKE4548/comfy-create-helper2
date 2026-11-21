@@ -23,7 +23,7 @@ import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { MobileImageSheet } from './MobileImageSheet'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useSystemStats } from '../../../hooks/useSystemStats'
-import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
+import { isActiveJobStatus, selectMobileOverallProgress, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import { PresetTabItem } from './PresetTabItem'
@@ -124,6 +124,12 @@ export const MobileLayout = ({
     const triggerId = menu.id
     setMenu(null)
     await handleClosePresetTabs(triggerId, mode)
+  }
+  const closeSingleFromMenu = () => {
+    if (!menu || isPresetTabsClosing) return
+    const triggerId = menu.id
+    setMenu(null)
+    removeSet(triggerId)
   }
   const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
 
@@ -349,11 +355,6 @@ export const MobileLayout = ({
     }
   })()
 
-  const finishedBatchCount = activeBatch ? activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length : 0
-  const hasGeneratingJob = activeBatch ? activeBatch.some((j: any) => j.status === 'generating') : isGeneratingHere
-  const totalBatchCount = activeBatch ? activeBatch.length : 1
-  const currentBatchItemNumber = hasGeneratingJob ? Math.min(totalBatchCount, finishedBatchCount + 1) : Math.min(totalBatchCount, finishedBatchCount)
-
   const overallPercentage = isGeneratingHere ? batchProgress.percentage : 0
   const etaProgress = generationSnapshot
     ? (normalProgress?.fraction ?? 0) * 100
@@ -363,6 +364,7 @@ export const MobileLayout = ({
   const eta = (etaElapsedKnown && etaProgress > 0 && etaElapsedTime > 0)
     ? Math.round(etaElapsedTime * (100 - etaProgress) / etaProgress)
     : null
+  const mobileOverallProgress = selectMobileOverallProgress(normalProgress, activeBatch, isGeneratingHere)
 
   const renderUploadZone = () => (
     <div
@@ -480,11 +482,16 @@ export const MobileLayout = ({
       <div
         data-testid="mobile-sticky-status-header"
         data-test-progress-line="true"
-        className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[10px] font-mono text-zinc-300"
+        className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[11px] font-mono text-zinc-300"
       >
         <span className="truncate flex-1 min-w-0" data-testid="mobile-progress-line">
           {displayProgressActive ? displayNodeName : vramWaitStatus?.isWaiting ? 'VRAM解放待ち' : (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? '他セッションで生成中' : '待機中'}
         </span>
+        {displayProgressActive && mobileOverallProgress && (
+          <span data-testid="mobile-overall-progress-text" className="shrink-0 font-semibold text-accent-green ux-numeric">
+            {mobileOverallProgress.label}
+          </span>
+        )}
         {showCompletionNav && (
           <button
             type="button"
@@ -498,9 +505,20 @@ export const MobileLayout = ({
             生成完了: 最新画像を表示
           </button>
         )}
-        <span className="shrink-0">{displayProgressActive ? '進行中' : '—'}</span>
+        <span className="shrink-0 ux-numeric">{displayProgressActive ? `${Math.round(displayNodePercentage)}%` : '—'}</span>
         <span className="shrink-0 ux-numeric">ETA {displayProgressActive ? (eta === null ? '未取得' : `${eta}秒`) : '未取得'}</span>
-        {displayProgressActive && <span className="absolute bottom-0 left-0 h-0.5 bg-accent-green" style={{ width: `${generationSnapshot && normalProgress ? normalProgress.fraction * 100 : overallPercentage}%` }} />}
+        {displayProgressActive && (
+          <span
+            data-testid="mobile-running-job-progress-bar"
+            role="progressbar"
+            aria-label="実行中ジョブ進捗"
+            aria-valuenow={Math.round(displayNodePercentage)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="absolute bottom-0 left-0 h-0.5 bg-accent-green transition-all duration-200"
+            style={{ width: `${displayNodePercentage}%` }}
+          />
+        )}
       </div>
 
       {/* Progress Line */}
@@ -525,49 +543,24 @@ export const MobileLayout = ({
             </button>
           </div>
         ) : displayProgressActive ? (
-          <>
-            {/* 全体バッチ進捗 */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                <span>全体進捗: {generationSnapshot && normalProgress ? `${normalProgress.finished}/${normalProgress.total}` : `${currentBatchItemNumber}/${totalBatchCount}`} 枚目</span>
-                <span>{generationSnapshot && normalProgress ? `${Math.round(normalProgress.fraction * 100)}%` : `${overallPercentage}%`}</span>
-              </div>
-              <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${generationSnapshot && normalProgress ? normalProgress.fraction * 100 : overallPercentage}%` }} />
-              </div>
+          <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium">
+            <div className="flex items-center gap-2">
+              <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
+              <span className="ux-numeric">経過: {displayElapsedTime}秒</span>
+              {eta !== null && (
+                <>
+                  <span className="text-zinc-700">|</span>
+                  <span className="ux-numeric">残り約: {eta}秒</span>
+                </>
+              )}
             </div>
-
-            {/* 詳細ノード進捗 */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                <span className="min-w-0 flex-1 truncate">実行中: {displayNodeName}</span>
-                <span className="shrink-0 ml-2">{Math.round(displayNodePercentage)}%</span>
-              </div>
-              <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${displayNodePercentage}%` }} />
-              </div>
-            </div>
-
-            {/* 時間情報・Queue情報 */}
-            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium pt-0.5">
-              <div className="flex items-center gap-2">
-                <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
-                <span className="ux-numeric">経過: {displayElapsedTime}秒</span>
-                {eta !== null && (
-                  <>
-                    <span className="text-zinc-700">|</span>
-                    <span className="ux-numeric">残り約: {eta}秒</span>
-                  </>
-                )}
-              </div>
-              <span 
-                onClick={() => setIsJobModalOpen(true)}
-                className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
-              >
-                Queue: {totalQueueCount}
-              </span>
-            </div>
-          </>
+            <span
+              onClick={() => setIsJobModalOpen(true)}
+              className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
+            >
+              Queue: {totalQueueCount}
+            </span>
+          </div>
         ) : (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? (
           <>
             {/* ステータスバッジ & 進捗 */}
@@ -611,32 +604,26 @@ export const MobileLayout = ({
               <div data-radius-exempt className="w-1.5 h-1.5 rounded-full bg-accent-green shrink-0" />
               <span className="truncate">Ready</span>
               <span className="text-zinc-600">|</span>
-              <span 
+              <span
                 onClick={() => setIsJobModalOpen(true)}
                 className="font-semibold text-zinc-300 cursor-pointer hover:text-white transition-colors"
               >
                 Queue: {totalQueueCount}
               </span>
             </div>
-            <div className="flex items-center gap-2 flex-1 max-w-[150px]">
-              <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
-                <div className="h-full bg-accent-green transition-all duration-200" style={{ width: '0%' }} />
-              </div>
-              <span className="font-mono text-accent-green whitespace-nowrap">0%</span>
-            </div>
           </div>
         )}
       </div>
 
-      <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-2.5">
+      <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-1.5">
         {([
           ['prompt', 'プロンプト'],
           ['parameters', 'パラメータ'],
           ['history', '履歴'],
         ] as const).map(([segment, label]) => (
-          <button key={segment} type="button" aria-pressed={mobileSegment === segment}
+          <button key={segment} type="button" data-tap-target-exempt aria-pressed={mobileSegment === segment}
             aria-controls={`mobile-${segment}-panel`} onClick={() => setMobileSegment(segment)}
-            className={`min-h-[44px] rounded-lg border px-2 text-sm font-medium transition-colors ${mobileSegment === segment ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200'}`}>
+            className={`relative h-8 touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[7px] rounded-lg border px-2 text-sm font-medium transition-colors ${mobileSegment === segment ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200'}`}>
             {label}
           </button>
         ))}
@@ -653,31 +640,33 @@ export const MobileLayout = ({
 
       {/* Multi-Set Tab Bar (Mobile) */}
       {selectedWorkflowId && (
-        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-3 py-2.5 space-y-2.5">
+        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-3 py-1.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               {activeSet && (
-                <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+                <div className="flex items-center gap-4 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
                   <button
                     type="button"
                     id="undo-btn-mobile"
+                    data-tap-target-exempt
                     onClick={() => undo?.(activeSet.id)}
                     disabled={!canUndo}
                     title="Undo"
                     aria-label="Undo"
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                    className="relative inline-flex h-7 w-7 touch-manipulation before:absolute before:content-[''] before:-inset-2 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
                   >
                     <Undo2 size={16} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     id="redo-btn-mobile"
+                    data-tap-target-exempt
                     onClick={() => redo?.(activeSet.id)}
                     disabled={!canRedo}
                     title="Redo"
                     aria-label="Redo"
-                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                    className="relative inline-flex h-7 w-7 touch-manipulation before:absolute before:content-[''] before:-inset-2 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
                   >
                     <Redo2 size={16} aria-hidden="true" />
                   </button>
@@ -686,34 +675,35 @@ export const MobileLayout = ({
               <button
                 type="button"
                 id="manage-presets-btn-mobile"
+                data-tap-target-exempt
                 onClick={() => setIsPresetManagerOpen(true)}
                 aria-label="管理"
-                className="inline-flex min-h-11 items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
+                className="relative inline-flex h-7 px-2.5 touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[9px] items-center gap-1 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
               >
                 <Library size={14} aria-hidden="true" />
                 管理
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto py-2 scrollbar-none flex-1">
               {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-                <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
+                <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
               ))}
             </div>
-            <button type="button" id="add-set-btn-mobile" onClick={() => {
+            <button type="button" id="add-set-btn-mobile" data-tap-target-exempt onClick={() => {
               const allNames = presets?.map((p) => p.name) || []
               setNewSetName(generateNextProfileName('Set', allNames))
               setCopySourceId('default')
               setShowCopyModal(true)
             }}
-              className="flex items-center justify-center p-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 transition-all flex-shrink-0">
+              className="relative flex items-center justify-center h-7 w-7 touch-manipulation before:absolute before:content-[''] before:-inset-[9px] rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 transition-all flex-shrink-0">
               <Plus size={14} />
             </button>
           </div>
         </div>
       )}
-      <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
+      <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onCloseSingle={closeSingleFromMenu} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
 
       {/* Prompt Template Split Editor (Mobile) */}
       {isTemplateActive && workflow?.prompt_template_config?.template_snapshot && (
@@ -735,11 +725,11 @@ export const MobileLayout = ({
 
       {/* Mobile Prompt Tabs */}
       {displayPromptMappings.length > 0 && (
-        <div className="px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
-          <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-1 no-scrollbar">
+        <div className="px-3 py-1.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
+          <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-2 no-scrollbar">
             {displayPromptMappings.map((m: WorkflowMapping) => (
-              <button key={m.id} type="button" onClick={() => setActivePromptTab(m.role || '')}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all shrink-0 whitespace-nowrap ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
+              <button key={m.id} type="button" data-tap-target-exempt onClick={() => setActivePromptTab(m.role || '')}
+                className={`relative h-7 px-2.5 touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[9px] text-xs rounded-full border transition-all shrink-0 whitespace-nowrap ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
                 {m.display_name}
               </button>
             ))}
@@ -755,14 +745,15 @@ export const MobileLayout = ({
           <div className="flex items-center justify-between">
             <button
               type="button"
+              data-tap-target-exempt
               onClick={() => setRoleCollapsed(activePromptTabMapping.role!, !isCollapsed)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+              className="relative h-7 touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-2 flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green/60"
             >
               {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               <span>{activePromptTabMapping.display_name} Input</span>
             </button>
             {!isCollapsed && (
-              <div className="relative flex items-center gap-1.5">
+              <div className="relative flex items-center gap-3">
                 <PromptSectionClipboardMenu
                   role={activePromptTabMapping.role!}
                   currentValue={paramValues[activePromptTabMapping.role!] ?? ''}
@@ -772,8 +763,9 @@ export const MobileLayout = ({
                 {promptTranslation && (
                   <button
                     type="button"
+                    data-tap-target-exempt
                     onClick={() => promptTranslation.openTranslation(activePromptTabMapping.role!, paramValues[activePromptTabMapping.role!] || '')}
-                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
+                    className={`relative h-7 min-w-[38px] px-2 touch-manipulation before:absolute before:content-[''] before:-inset-y-[9px] before:-inset-x-1 flex items-center justify-center gap-1 text-[10px] border rounded transition-all ${
                       promptTranslation.isOpen && promptTranslation.activeRole === activePromptTabMapping.role
                         ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
                         : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
@@ -783,8 +775,9 @@ export const MobileLayout = ({
                   </button>
                 )}
                 <button type="button" id={`add-asset-btn-mobile-${activePromptTabMapping.role!}`}
+                  data-tap-target-exempt
                   onClick={() => setOpenAddAssetRole(openAddAssetRole === activePromptTabMapping.role ? null : activePromptTabMapping.role!)}
-                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
+                  className="relative h-7 px-2 touch-manipulation before:absolute before:content-[''] before:-inset-y-[9px] before:inset-x-0 flex items-center gap-1 text-[10px] bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
                   <Plus size={10} />Add Asset
                 </button>
                 {openAddAssetRole === activePromptTabMapping.role && (
@@ -858,6 +851,8 @@ export const MobileLayout = ({
         />
         <ParamPanel
           mobile
+          stageGrouping={true}
+          workflowId={selectedWorkflowId}
           paramMappings={paramMappings}
           paramValues={paramValues}
           setParamValues={setParamValues}

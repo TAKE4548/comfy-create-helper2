@@ -78,12 +78,13 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
   };
 
   return (
-    <div className={`${menuAlign === 'end' ? 'relative ' : ''}inline-flex items-center gap-1`} ref={menuRef} data-prompt-clipboard-menu="" data-menu-align={menuAlign}>
+    <div className={`${menuAlign === 'end' ? 'relative ' : ''}inline-flex items-center gap-4 md:gap-1`} ref={menuRef} data-prompt-clipboard-menu="" data-menu-align={menuAlign}>
       <button
         type="button"
+        data-tap-target-exempt
         onClick={handleCopySection}
         disabled={!currentValue.trim()}
-        className="p-1.5 rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] disabled:opacity-40 disabled:hover:border-[rgba(255,255,255,0.08)] disabled:hover:text-zinc-300 transition-colors shrink-0"
+        className="relative inline-flex items-center justify-center h-7 w-7 md:h-auto md:w-auto md:p-1.5 touch-manipulation before:absolute before:content-[''] before:-inset-[9px] md:before:hidden rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] disabled:opacity-40 disabled:hover:border-[rgba(255,255,255,0.08)] disabled:hover:text-zinc-300 transition-colors shrink-0"
         title="プロンプトをコピー"
         aria-label={`プロンプトをコピー (${role})`}
       >
@@ -92,8 +93,9 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
 
       <button
         type="button"
+        data-tap-target-exempt
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] transition-colors shrink-0 text-xs"
+        className="relative flex items-center justify-center gap-0.5 h-7 min-w-[32px] px-1.5 md:h-auto md:min-w-0 md:py-1 touch-manipulation before:absolute before:content-[''] before:-inset-x-[7px] before:-inset-y-[9px] md:before:hidden rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] transition-colors shrink-0 text-xs"
         title="クリップボード・履歴操作"
         aria-label={`クリップボード・履歴メニュー (${role})`}
         aria-expanded={isOpen}

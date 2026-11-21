@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SnapshotGalleryView, toThumbnailUrl } from '../SnapshotGalleryView'
 import type { SnapshotGalleryViewProps } from '../SnapshotGalleryView'
 import type { SnapshotSummary } from '../../../../api/types'
@@ -97,8 +97,8 @@ describe('SnapshotGalleryView', () => {
     })
     expect(defaultProps.setSelectedTagSetId).toHaveBeenCalledWith(30)
 
-    // Sort order
-    fireEvent.click(screen.getByRole('button', { name: '古い順' }))
+    // Sort order (desktop filter controls)
+    fireEvent.click(within(document.getElementById('history-filter-controls')!).getByRole('button', { name: '古い順' }))
     expect(defaultProps.setSortOrder).toHaveBeenCalledWith('asc')
   })
 
@@ -160,6 +160,7 @@ describe('SnapshotGalleryView', () => {
 
     expect(screen.getByText('0 snapshots')).toBeInTheDocument()
     expect(screen.getByText('No snapshots yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'フィルターを解除' })).not.toBeInTheDocument()
   })
 
   it('handles snapshot preview click when not in multi-select mode', () => {
@@ -203,6 +204,132 @@ describe('SnapshotGalleryView', () => {
     expect(deleteBtn).toBeInTheDocument()
     fireEvent.click(deleteBtn!)
     expect(defaultProps.onDeleteSnapshot).toHaveBeenCalledWith(1)
+  })
+
+  it('[REQ-435/AC-10] collapses filter panel on mobile by default, toggles expansion, and protects desktop sizing', () => {
+    render(
+      <SnapshotGalleryView
+        {...defaultProps}
+        selectedWorkflowId={10}
+      />
+    )
+
+    const mobileBar = screen.getByTestId('history-mobile-filter-bar')
+    expect(mobileBar).toHaveClass('flex', 'md:hidden')
+
+    const toggle = document.getElementById('history-mobile-filter-toggle')!
+    expect(toggle).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-controls', 'history-filter-controls')
+    expect(toggle).toHaveAttribute('data-tap-target-exempt')
+    expect(toggle).toHaveClass('h-8')
+
+    const controls = document.getElementById('history-filter-controls')!
+    expect(controls).toHaveClass('hidden', 'md:flex')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(controls).toHaveClass('flex', 'md:flex')
+    expect(controls).not.toHaveClass('hidden')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(controls).toHaveClass('hidden', 'md:flex')
+
+    expect(screen.getByRole('searchbox', { name: 'ワークフローを検索' })).toHaveClass('min-h-11', 'md:min-h-0', 'md:h-8')
+    expect(screen.getByRole('searchbox', { name: 'LoRAを検索' })).toHaveClass('min-h-11', 'md:min-h-0', 'md:h-8')
+    expect(screen.getByRole('searchbox', { name: 'タグセットを検索' })).toHaveClass('min-h-11', 'md:min-h-0', 'md:h-8')
+    expect(screen.getByRole('button', { name: /Workflow: Workflow A/ })).toHaveClass('min-h-11', 'md:min-h-0', 'md:h-8')
+
+    const gridWrapper = screen.getByTestId('snapshot-grid').parentElement!
+    expect(gridWrapper).toHaveClass('p-3', 'md:p-5')
+  })
+
+  it('[REQ-435/AC-11] displays active filter count on mobile toggle only when filters are active', () => {
+    const { rerender } = render(<SnapshotGalleryView {...defaultProps} />)
+
+    expect(screen.queryByTestId('history-active-filter-count')).not.toBeInTheDocument()
+
+    rerender(
+      <SnapshotGalleryView
+        {...defaultProps}
+        selectedWorkflowId={10}
+        selectedLoraId={20}
+      />
+    )
+
+    const toggle = document.getElementById('history-mobile-filter-toggle')!
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByTestId('history-active-filter-count')).toHaveTextContent('(2件)')
+
+    rerender(
+      <SnapshotGalleryView
+        {...defaultProps}
+        selectedWorkflowId={10}
+        selectedLoraId={20}
+        selectedTagSetId={30}
+      />
+    )
+    expect(screen.getByTestId('history-active-filter-count')).toHaveTextContent('(3件)')
+  })
+
+  it('[REQ-435/AC-12] supports sort in both collapsed and expanded states and resets filters from empty state', () => {
+    const setSelectedWorkflowId = vi.fn()
+    const setSelectedLoraId = vi.fn()
+    const setSelectedTagSetId = vi.fn()
+    const setSortOrder = vi.fn()
+
+    const { rerender } = render(
+      <SnapshotGalleryView
+        {...defaultProps}
+        setSortOrder={setSortOrder}
+      />
+    )
+
+    const mobileBar = screen.getByTestId('history-mobile-filter-bar')
+    expect(within(mobileBar).getByText('2件')).toBeInTheDocument()
+
+    const mobileOldestBtn = within(mobileBar).getByRole('button', { name: '古い順' })
+    expect(mobileOldestBtn).toHaveAttribute('data-tap-target-exempt')
+    expect(mobileOldestBtn).toHaveClass('h-8')
+    expect(mobileOldestBtn.parentElement).not.toHaveClass('overflow-hidden')
+    fireEvent.click(mobileOldestBtn)
+    expect(setSortOrder).toHaveBeenCalledWith('asc')
+
+    // Expand filter panel and verify desktop sort controls also work without overflow-hidden
+    fireEvent.click(document.getElementById('history-mobile-filter-toggle')!)
+    const controls = document.getElementById('history-filter-controls')!
+    const desktopNewestBtn = within(controls).getByRole('button', { name: '新しい順' })
+    expect(desktopNewestBtn.parentElement).not.toHaveClass('overflow-hidden')
+    fireEvent.click(desktopNewestBtn)
+    expect(setSortOrder).toHaveBeenCalledWith('desc')
+
+    // Filter search input + AND-combined 0 results Empty State & clear button
+    const workflowSearchInput = screen.getByRole('searchbox', { name: 'ワークフローを検索' }) as HTMLInputElement
+    fireEvent.change(workflowSearchInput, { target: { value: 'Workflow A' } })
+    expect(workflowSearchInput.value).toBe('Workflow A')
+
+    rerender(
+      <SnapshotGalleryView
+        {...defaultProps}
+        snapshots={[]}
+        selectedWorkflowId={10}
+        selectedLoraId={20}
+        setSelectedWorkflowId={setSelectedWorkflowId}
+        setSelectedLoraId={setSelectedLoraId}
+        setSelectedTagSetId={setSelectedTagSetId}
+        setSortOrder={setSortOrder}
+      />
+    )
+
+    expect(screen.getByText('条件に一致するスナップショットがありません。')).toBeInTheDocument()
+    const clearBtn = screen.getByRole('button', { name: 'フィルターを解除' })
+    fireEvent.click(clearBtn)
+
+    expect(setSelectedWorkflowId).toHaveBeenCalledWith(null)
+    expect(setSelectedLoraId).toHaveBeenCalledWith(null)
+    expect(setSelectedTagSetId).toHaveBeenCalledWith(null)
+    expect(workflowSearchInput.value).toBe('')
   })
 
   describe('toThumbnailUrl', () => {

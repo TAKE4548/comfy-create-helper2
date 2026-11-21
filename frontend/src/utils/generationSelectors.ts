@@ -210,3 +210,42 @@ export function selectReleasedJobs(snapshot: GenerationSnapshot, sessionId: stri
     .sort((a, b) => at(b) - at(a))
     .slice(0, limit)
 }
+
+export interface MobileOverallProgress {
+  current: number // n: 完了件数+1（全件完了時は m）
+  total: number   // m: 有効job総数（cancelled / released / unconfirmed を除外、failed は完了に含める）
+  label: string   // `${current}/${total}`
+}
+
+function formatMobileOverallProgress(finished: number, total: number): MobileOverallProgress | null {
+  if (!Number.isFinite(total) || total <= 0) return null
+  const safeFinished = Number.isFinite(finished) ? Math.max(0, Math.floor(finished)) : 0
+  const current = safeFinished >= total ? total : Math.min(total, safeFinished + 1)
+  return {
+    current,
+    total,
+    label: `${current}/${total}`,
+  }
+}
+
+export function selectMobileOverallProgress(
+  normalProgress: { finished: number; total: number } | null,
+  activeBatch: ReadonlyArray<{ status?: string }> | null | undefined,
+  isGeneratingHere: boolean,
+): MobileOverallProgress | null {
+  if (normalProgress !== null) {
+    return formatMobileOverallProgress(normalProgress.finished, normalProgress.total)
+  }
+
+  if (!isGeneratingHere || !activeBatch || activeBatch.length === 0) {
+    return null
+  }
+
+  const validItems = activeBatch.filter(
+    (item) => item.status !== 'cancelled' && item.status !== 'released' && item.status !== 'unconfirmed',
+  )
+  const finished = validItems.filter(
+    (item) => item.status === 'completed' || item.status === 'succeeded' || item.status === 'failed',
+  ).length
+  return formatMobileOverallProgress(finished, validItems.length)
+}

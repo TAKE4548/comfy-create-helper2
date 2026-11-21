@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
@@ -338,11 +338,10 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     fireEvent.click(checkboxes[1])
     expect(state.toggleSetChecked).toHaveBeenCalledWith('set-2')
 
-    // 3) Remove tab (close button)
-    const closeButton = screen.getByRole('button', { name: 'Preset Alphaのタブを閉じる' })
-    expect(closeButton).toHaveAttribute('title', 'タブを閉じる (DBからは削除されません)')
-    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
-    fireEvent.click(closeButton)
+    // 3) Remove tab via unified menu ("このタブを閉じる")
+    expect(screen.queryByRole('button', { name: 'Preset Alphaのタブを閉じる' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Preset Alphaのタブ操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'このタブを閉じる' }))
     expect(state.removeSet).toHaveBeenCalledWith('set-1')
 
     // 4) Undo / Redo in left pane toolbar
@@ -378,6 +377,23 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
     expect(screen.getByRole('menuitem', { name: '右のタブをすべて閉じる' })).toBeDisabled()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('#desktop-preset-tabs-bar [data-preset-id]')).toHaveLength(3)
+  })
+
+  it('[REQ-402/AC-11] cancel-focus', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-402/AC-11'], layer: 'unit', caseId: 'cancel-focus' })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    const state = createMockState()
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
+    const trigger = screen.getByRole('button', { name: 'Preset Gammaのタブ操作' })
+    trigger.focus()
+    expect(trigger).toHaveFocus()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
     expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
     expect(container.querySelectorAll('#desktop-preset-tabs-bar [data-preset-id]')).toHaveLength(3)
   })
@@ -485,5 +501,55 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
 
     expect(screen.getByText('経過時間: 20秒')).toBeInTheDocument()
     expect(screen.getByText('残り約: 20秒')).toBeInTheDocument()
+  })
+
+  it('[REQ-435/AC-3] uses compact desktop dimensions without min-h-11 or py-3 on preset tabs bar and action bar', () => {
+    const state = createMockState()
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
+
+    const tabsBar = container.querySelector('#desktop-preset-tabs-bar') as HTMLElement
+    expect(tabsBar).toHaveClass('py-1')
+    expect(tabsBar).not.toHaveClass('py-1.5')
+    expect(tabsBar).not.toHaveClass('py-2')
+    const tabsScroller = tabsBar.querySelector('.overflow-x-auto') as HTMLElement
+    expect(tabsScroller).toHaveClass('py-0.5')
+    expect(tabsScroller).not.toHaveClass('py-1')
+    expect(tabsBar.querySelector('.min-h-11')).toBeNull()
+
+    const queueBtn = container.querySelector('#queue-open-btn') as HTMLElement
+    const generateBtn = container.querySelector('#generate-btn') as HTMLElement
+    const saveSnapshotBtn = container.querySelector('#save-snapshot-btn') as HTMLElement
+    expect(queueBtn).toHaveClass('h-9')
+    expect(queueBtn).not.toHaveClass('min-h-11')
+    expect(generateBtn).toHaveClass('h-9', 'py-1.5')
+    expect(generateBtn).not.toHaveClass('py-3', 'min-h-11')
+    expect(saveSnapshotBtn).toHaveClass('h-9', 'py-1.5')
+    expect(saveSnapshotBtn).not.toHaveClass('py-3', 'min-h-11')
+  })
+
+  it('[REQ-435/AC-4] renders preset tabs with single menu trigger and no inline close button', () => {
+    const state = createMockState()
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
+
+    expect(screen.queryByRole('button', { name: /のタブを閉じる/ })).toBeNull()
+    const tabItems = container.querySelectorAll('#desktop-preset-tabs-bar [data-preset-id]')
+    expect(tabItems).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Preset Alphaのタブ操作' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Preset Betaのタブ操作' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Preset Gammaのタブ操作' })).toBeInTheDocument()
+  })
+
+  it('[REQ-435/AC-6] calls removeSet via menu item "このタブを閉じる" without invoking handleClosePresetTabs', () => {
+    const state = createMockState()
+    renderGroupedDesktop(<DesktopLayout state={state} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preset Betaのタブ操作' }))
+    const closeSingleItem = screen.getByRole('menuitem', { name: 'このタブを閉じる' })
+    fireEvent.click(closeSingleItem)
+
+    expect(state.removeSet).toHaveBeenCalledTimes(1)
+    expect(state.removeSet).toHaveBeenCalledWith('set-2')
+    expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
+import { LS_KEYS } from '../../../../utils/localStorageKeys'
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -510,6 +511,166 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
       // Both Positive and Negative prompts rendered as conventional inputs
       expect(screen.getByRole('button', { name: 'Positive Prompt' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Negative Prompt' })).toBeInTheDocument()
+    })
+  })
+
+  describe('REQ-435 Desktop Stage Collapse & Status Bar Preservation', () => {
+    const stageMasters = [
+      { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: [], previous_suffixes: [], is_builtin: true, is_active: true, sort_order: 0 },
+      { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: [], previous_suffixes: [], is_builtin: true, is_active: true, sort_order: 1 },
+    ]
+    const stageMappingMasters = [
+      {
+        id: 7, group_id: null, base_key: 'prompt', name: 'Prompt', param_name: 'text', input_type: 'textarea',
+        expected_class_types: null, base_title_patterns: null, sort_order: 0,
+        variants: [
+          { id: 71, master_id: 7, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'Main_Positive_Prompt', extra_title_patterns: null, is_enabled: true },
+          { id: 72, master_id: 7, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'Rough_Positive_Prompt', extra_title_patterns: null, is_enabled: true },
+        ],
+      },
+      {
+        id: 8, group_id: null, base_key: 'steps', name: 'Steps', param_name: 'steps', input_type: 'int',
+        expected_class_types: null, base_title_patterns: null, sort_order: 1,
+        variants: [
+          { id: 81, master_id: 8, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'Sampler_Steps', extra_title_patterns: null, is_enabled: true },
+          { id: 82, master_id: 8, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'Sampler_Steps_rough', extra_title_patterns: null, is_enabled: true },
+        ],
+      },
+    ]
+
+    const renderWithStageData = (ui: React.ReactElement) => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+      queryClient.setQueryData(['stage-masters'], stageMasters)
+      queryClient.setQueryData(['mapping-masters'], stageMappingMasters)
+      return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+    }
+
+    const createStageState = () => {
+      const state = createMockState()
+      useGenerationStore.setState({ roleTextModes: { Main_Positive_Prompt: true, Rough_Positive_Prompt: true } } as any)
+      state.selectedWorkflowId = 42
+      state.workflow = { id: 42, name: 'Workflow 42', target_base_model_id: 'sdxl', json_body: '{}', mappings: [] } as any
+      state.mappingMasters = stageMappingMasters as any
+      state.textMappings = [
+        { id: 11, master_id: 7, variant_id: 71, node_id: '1', role: 'Main_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Main Prompt' },
+        { id: 12, master_id: 7, variant_id: 72, node_id: '2', role: 'Rough_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Rough Prompt' },
+      ] as any
+      state.paramMappings = [
+        { id: 21, master_id: 8, variant_id: 81, node_id: '3', role: 'Sampler_Steps', param_name: 'steps', input_type: 'int', display_name: 'Main Steps', default_value: 20 },
+        { id: 22, master_id: 8, variant_id: 82, node_id: '4', role: 'Sampler_Steps_rough', param_name: 'steps', input_type: 'int', display_name: 'Rough Steps', default_value: 12 },
+      ] as any
+      state.paramValues = {
+        Main_Positive_Prompt: 'main prompt text',
+        Rough_Positive_Prompt: 'rough preserved text',
+        Sampler_Steps: '25',
+        Sampler_Steps_rough: '14',
+      }
+      return state
+    }
+
+    beforeEach(() => {
+      localStorage.clear()
+      useGenerationStore.setState({ promptChips: {}, roleTextModes: {}, generationStartTime: null, nodeProgress: null, generationSnapshot: null, vramWaitStatus: null } as any)
+    })
+
+    it('[REQ-435/AC-9] preserves Desktop renderStatusBar progress display in idle and generating states', () => {
+      const idleState = createMockState()
+      const idleRender = renderWithQueryClient(<DesktopLayout state={idleState as any} />)
+      expect(screen.getByText('Ready')).toBeInTheDocument()
+      expect(screen.getByText('0%')).toBeInTheDocument()
+      idleRender.unmount()
+
+      useGenerationStore.setState({
+        generationStartTime: Date.now() - 10_000,
+        nodeProgress: { nodeName: 'KSampler', percentage: 40 },
+      } as any)
+      const activeState = createMockState()
+      activeState.isGeneratingHere = true
+      activeState.progress = { value: 4, max: 10, percentage: 40 } as any
+      renderWithQueryClient(<DesktopLayout state={activeState as any} />)
+
+      expect(screen.getByText(/全体進捗:/)).toBeInTheDocument()
+      expect(screen.getByText('実行中: KSampler')).toBeInTheDocument()
+      expect(screen.getByText(/経過時間:/)).toBeInTheDocument()
+      expect(screen.getByText(/残り約:/)).toBeInTheDocument()
+    })
+
+    it('[REQ-435/AC-14] toggles and persists collapse state independently for prompt and parameter stage groups', () => {
+      const state = createStageState()
+      const { container } = renderWithStageData(<DesktopLayout state={state as any} />)
+
+      const promptRoot = container.querySelector('#desktop-prompt-scroll') as HTMLElement
+      const controlsRoot = container.querySelector('#desktop-controls-scroll') as HTMLElement
+      const promptRoughToggle = promptRoot.querySelector('section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+      const paramRoughToggle = controlsRoot.querySelector('section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+
+      expect(promptRoughToggle).toBeTruthy()
+      expect(paramRoughToggle).toBeTruthy()
+      expect(promptRoughToggle).toHaveAttribute('aria-expanded', 'true')
+      expect(paramRoughToggle).toHaveAttribute('aria-expanded', 'true')
+
+      fireEvent.click(promptRoughToggle)
+      expect(promptRoughToggle).toHaveAttribute('aria-expanded', 'false')
+      expect(promptRoot.querySelector('section[data-stage-key="rough"] .stage-input-group__body')).toHaveAttribute('hidden')
+      expect(paramRoughToggle).toHaveAttribute('aria-expanded', 'true')
+
+      fireEvent.click(paramRoughToggle)
+      expect(paramRoughToggle).toHaveAttribute('aria-expanded', 'false')
+      expect(controlsRoot.querySelector('section[data-stage-key="rough"] .stage-input-group__body')).toHaveAttribute('hidden')
+
+      const stored = JSON.parse(localStorage.getItem(LS_KEYS.STAGE_COLLAPSED_STATE) || '{}')
+      expect(stored.version).toBe(1)
+      expect(stored.collapsed['42:prompt']).toHaveLength(1)
+      expect(stored.collapsed['42:parameters']).toHaveLength(1)
+    })
+
+    it('[REQ-435/AC-16] restores collapsed prompt and parameter stage states after unmount and remount', () => {
+      const state = createStageState()
+      const first = renderWithStageData(<DesktopLayout state={state as any} />)
+      const promptRoughToggle1 = first.container.querySelector('#desktop-prompt-scroll section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+      const paramMainToggle1 = first.container.querySelector('#desktop-controls-scroll section[data-stage-key="main"] button.stage-input-group__toggle') as HTMLButtonElement
+
+      fireEvent.click(promptRoughToggle1)
+      fireEvent.click(paramMainToggle1)
+      first.unmount()
+
+      const second = renderWithStageData(<DesktopLayout state={createStageState() as any} />)
+      const promptRoughToggle2 = second.container.querySelector('#desktop-prompt-scroll section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+      const promptMainToggle2 = second.container.querySelector('#desktop-prompt-scroll section[data-stage-key="main"] button.stage-input-group__toggle') as HTMLButtonElement
+      const paramMainToggle2 = second.container.querySelector('#desktop-controls-scroll section[data-stage-key="main"] button.stage-input-group__toggle') as HTMLButtonElement
+      const paramRoughToggle2 = second.container.querySelector('#desktop-controls-scroll section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+
+      expect(promptRoughToggle2).toHaveAttribute('aria-expanded', 'false')
+      expect(promptMainToggle2).toHaveAttribute('aria-expanded', 'true')
+      expect(paramMainToggle2).toHaveAttribute('aria-expanded', 'false')
+      expect(paramRoughToggle2).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('[REQ-435/AC-17] preserves input values inside collapsed prompt and parameter stages across collapse and expand', () => {
+      const state = createStageState()
+      const { container } = renderWithStageData(<DesktopLayout state={state as any} />)
+
+      const promptRoughToggle = container.querySelector('#desktop-prompt-scroll section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+      const paramRoughToggle = container.querySelector('#desktop-controls-scroll section[data-stage-key="rough"] button.stage-input-group__toggle') as HTMLButtonElement
+      const promptTextarea = container.querySelector('#prompt-Rough_Positive_Prompt textarea') as HTMLTextAreaElement
+      const paramInput = container.querySelector('#desktop-controls-scroll section[data-stage-key="rough"] input') as HTMLInputElement
+
+      expect(promptTextarea.value).toBe('rough preserved text')
+      expect(paramInput.value).toBe('14')
+
+      fireEvent.click(promptRoughToggle)
+      fireEvent.click(paramRoughToggle)
+      expect(promptRoughToggle).toHaveAttribute('aria-expanded', 'false')
+      expect(paramRoughToggle).toHaveAttribute('aria-expanded', 'false')
+      expect((container.querySelector('#prompt-Rough_Positive_Prompt textarea') as HTMLTextAreaElement).value).toBe('rough preserved text')
+      expect((container.querySelector('#desktop-controls-scroll section[data-stage-key="rough"] input') as HTMLInputElement).value).toBe('14')
+
+      fireEvent.click(promptRoughToggle)
+      fireEvent.click(paramRoughToggle)
+      expect(promptRoughToggle).toHaveAttribute('aria-expanded', 'true')
+      expect(paramRoughToggle).toHaveAttribute('aria-expanded', 'true')
+      expect((container.querySelector('#prompt-Rough_Positive_Prompt textarea') as HTMLTextAreaElement).value).toBe('rough preserved text')
+      expect((container.querySelector('#desktop-controls-scroll section[data-stage-key="rough"] input') as HTMLInputElement).value).toBe('14')
     })
   })
 })

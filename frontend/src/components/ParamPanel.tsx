@@ -10,6 +10,7 @@ import { SeedField } from './SeedField'
 import { ImageParamField } from './ImageParamField'
 import StageInputGroup from './StageInputGroup'
 import { useMappingStageGroups } from '../hooks/useMappingStageGroups'
+import { useStageCollapseState } from '../hooks/useStageCollapseState'
 
 export const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
@@ -71,15 +72,27 @@ const getSamplerNumericBounds = (
 
 function StageGroupedParameters({
   mappings,
+  workflowId,
   renderMapping,
 }: {
   mappings: readonly WorkflowMapping[]
+  workflowId?: number | null
   renderMapping: (mapping: WorkflowMapping) => ReactNode
 }): React.JSX.Element {
   const stageGroups = useMappingStageGroups(mappings, undefined, true)
+  const { isStageCollapsed, toggleStageCollapsed } = useStageCollapseState(workflowId, 'parameters')
+  const validKeys = stageGroups.map((g) => g.key)
   return <>
     {stageGroups.map((group) => (
-      <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
+      <StageInputGroup
+        key={group.key}
+        groupKey={group.key}
+        stageName={group.stageName}
+        stageKey={group.stageKey}
+        collapsible
+        collapsed={isStageCollapsed(group.key)}
+        onToggleCollapse={() => toggleStageCollapsed(group.key, validKeys)}
+      >
         <div className="space-y-3">{group.mappings.map(renderMapping)}</div>
       </StageInputGroup>
     ))}
@@ -123,6 +136,7 @@ export interface ParamPanelProps {
   onOpenParamSyncSettings?: () => void
   activeBaseModelId?: number | null
   stageGrouping?: boolean
+  workflowId?: number | null
 }
 
 export const ParamPanel = ({
@@ -147,6 +161,7 @@ export const ParamPanel = ({
   onOpenParamSyncSettings,
   activeBaseModelId,
   stageGrouping = false,
+  workflowId,
 }: ParamPanelProps) => {
   const [expandedSections, setExpandedSections] = useState<GenerateSectionsExpandedState>(() => {
     try {
@@ -411,7 +426,7 @@ export const ParamPanel = ({
       {expandedSections.parameters && (
         <div className={stageGrouping ? 'pt-1' : 'space-y-3 pt-1'}>
       {stageGrouping
-        ? <StageGroupedParameters mappings={visibleParamMappings as WorkflowMapping[]} renderMapping={renderParamMapping} />
+        ? <StageGroupedParameters mappings={visibleParamMappings as WorkflowMapping[]} workflowId={workflowId} renderMapping={renderParamMapping} />
         : visibleParamMappings.map(renderParamMapping)}
       {typeof batchSize === 'number' && setBatchSize && (
         <div className="flex items-center justify-between gap-4">

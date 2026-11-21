@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react'
-import { MoreHorizontal, X } from 'lucide-react'
+import { MoreHorizontal } from 'lucide-react'
 
 export interface PresetTabItemProps {
   id: string | number
@@ -8,13 +8,13 @@ export interface PresetTabItemProps {
   isActive: boolean
   onSelect: () => void
   onToggleCheck: () => void
-  onRemove: () => void
+  onRemove?: () => void
   onOpenMenu: (anchor: HTMLButtonElement, fromLongPress?: boolean) => void
   pending?: boolean
 }
 
 export const PresetTabItem = memo(function PresetTabItem({
-  id, name, checked, isActive, onSelect, onToggleCheck, onRemove, onOpenMenu,
+  id, name, checked, isActive, onSelect, onToggleCheck, onOpenMenu,
 }: PresetTabItemProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -86,12 +86,11 @@ export const PresetTabItem = memo(function PresetTabItem({
       const anchor = rootRef.current?.querySelector<HTMLButtonElement>('[data-preset-menu-trigger]')
       if (anchor) onOpenMenu(anchor)
     }}
-    className={`flex min-w-0 shrink-0 items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold ${isActive ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'bg-surface-2 border-transparent text-zinc-400'}`}
+    className={`flex h-8 min-w-0 shrink-0 items-center gap-4 rounded-lg border px-1.5 py-0.5 text-xs font-semibold md:h-7 md:gap-1 md:px-2 md:py-0 ${isActive ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'bg-surface-2 border-transparent text-zinc-400'}`}
     style={{ touchAction: 'pan-x pan-y' }}
   >
-    <button type="button" data-preset-select onClick={(event) => { cancelClick(event); if (!consumeSuppressedClick()) onSelect() }} aria-current={isActive ? 'true' : undefined} aria-label={`${name}を選択`} className="min-h-11 min-w-11 max-w-[140px] truncate text-left">{name}</button>
-    <label data-preset-gesture-exclude onClick={cancelClick} onPointerDown={(e) => e.stopPropagation()} className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center"><input type="checkbox" checked={checked} onChange={onToggleCheck} aria-label={`${name}を選択対象にする`} className="h-4 w-4 accent-accent-green" /></label>
-    <button type="button" data-preset-gesture-exclude onClick={(e) => { cancelClick(e); onRemove() }} onPointerDown={(e) => e.stopPropagation()} title="タブを閉じる (DBからは削除されません)" aria-label={`${name}のタブを閉じる`} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center text-zinc-500 hover:text-red-400"><X size={14} aria-hidden="true" /></button>
-    <button type="button" data-preset-gesture-exclude data-preset-menu-trigger onClick={(e) => { cancelClick(e); onOpenMenu(e.currentTarget) }} onPointerDown={(e) => e.stopPropagation()} aria-label={`${name}のタブ操作`} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center"><MoreHorizontal size={16} aria-hidden="true" /></button>
+    <button type="button" data-preset-select data-tap-target-exempt onClick={(event) => { cancelClick(event); if (!consumeSuppressedClick()) onSelect() }} aria-current={isActive ? 'true' : undefined} aria-label={`${name}を選択`} className="relative h-7 min-w-[32px] max-w-[140px] truncate text-left touch-manipulation before:absolute before:content-[''] before:-inset-x-1.5 before:-inset-y-2 md:h-6 md:min-w-0 md:before:hidden">{name}</button>
+    <label data-preset-gesture-exclude data-tap-target-exempt onClick={cancelClick} onPointerDown={(e) => e.stopPropagation()} className="relative inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center touch-manipulation before:absolute before:content-[''] before:-inset-2 md:h-6 md:w-6 md:before:hidden"><input type="checkbox" checked={checked} onChange={onToggleCheck} aria-label={`${name}を選択対象にする`} className="h-4 w-4 accent-accent-green" /></label>
+    <button type="button" data-preset-gesture-exclude data-preset-menu-trigger data-tap-target-exempt onClick={(e) => { cancelClick(e); onOpenMenu(e.currentTarget) }} onPointerDown={(e) => e.stopPropagation()} aria-label={`${name}のタブ操作`} className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center touch-manipulation before:absolute before:content-[''] before:-inset-2 md:h-6 md:w-6 md:before:hidden"><MoreHorizontal size={16} aria-hidden="true" /></button>
   </div>
 })

@@ -517,3 +517,141 @@ describe('ParamPanel Component - Toggle Switch Standardization [REQ-433]', () =>
     expect(onToggleBypass).toHaveBeenCalledWith(20, true)
   })
 })
+
+describe('ParamPanel Component - Stage Grouping & Collapse [REQ-435]', () => {
+  const createStageQueryClient = () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+    queryClient.setQueryData(['stage-masters'], [
+      { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 0 },
+      { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
+    ])
+    queryClient.setQueryData(['mapping-masters'], [{
+      id: 10, group_id: null, base_key: 'cfg', name: 'CFG', param_name: 'cfg', input_type: 'float',
+      expected_class_types: null, base_title_patterns: null, sort_order: 0,
+      variants: [
+        { id: 11, master_id: 10, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'cfg_main', extra_title_patterns: null, is_enabled: true },
+        { id: 12, master_id: 10, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'cfg_rough', extra_title_patterns: null, is_enabled: true },
+      ],
+    }])
+    return queryClient
+  }
+
+  const stageMappings = [
+    { id: 1, master_id: 10, variant_id: 11, role: 'cfg_main', param_name: 'cfg', input_type: 'float', display_name: 'Main CFG' },
+    { id: 2, master_id: 10, variant_id: 12, role: 'cfg_rough', param_name: 'cfg', input_type: 'float', display_name: 'Rough CFG' },
+  ]
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('[REQ-435/AC-13][REQ-435/AC-14][REQ-435/AC-15] renders stage headings with collapse toggles expanded by default for a first-time workflow', () => {
+    const queryClient = createStageQueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ParamPanel
+          workflowId={101}
+          stageGrouping
+          paramMappings={stageMappings}
+          paramValues={{ cfg_main: '7.5', cfg_rough: '5.0' }}
+          setParamValues={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+
+    const mainBtn = screen.getByRole('button', { name: 'Main (main)' })
+    const roughBtn = screen.getByRole('button', { name: 'Rough (rough)' })
+    expect(mainBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(roughBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('param-cfg_main')).toBeVisible()
+    expect(document.getElementById('param-cfg_rough')).toBeVisible()
+
+    fireEvent.click(roughBtn)
+    expect(roughBtn).toHaveAttribute('aria-expanded', 'false')
+    expect(mainBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById(roughBtn.getAttribute('aria-controls')!)).toHaveAttribute('hidden')
+    expect(document.getElementById('param-cfg_main')).toBeVisible()
+  })
+
+  it('[REQ-435/AC-16] persists stage collapse state per workflowId across remounts and workflow switches', () => {
+    const queryClient = createStageQueryClient()
+    const renderPanel = (workflowId: number) => (
+      <QueryClientProvider client={queryClient}>
+        <ParamPanel
+          workflowId={workflowId}
+          stageGrouping
+          paramMappings={stageMappings}
+          paramValues={{ cfg_main: '7.5', cfg_rough: '5.0' }}
+          setParamValues={vi.fn()}
+        />
+      </QueryClientProvider>
+    )
+
+    const { rerender, unmount } = render(renderPanel(101))
+    fireEvent.click(screen.getByRole('button', { name: 'Rough (rough)' }))
+    expect(screen.getByRole('button', { name: 'Rough (rough)' })).toHaveAttribute('aria-expanded', 'false')
+
+    // Switch to another workflow -> expanded by default
+    rerender(renderPanel(202))
+    expect(screen.getByRole('button', { name: 'Rough (rough)' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Main (main)' })).toHaveAttribute('aria-expanded', 'true')
+
+    // Switch back -> restored
+    rerender(renderPanel(101))
+    expect(screen.getByRole('button', { name: 'Rough (rough)' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Main (main)' })).toHaveAttribute('aria-expanded', 'true')
+
+    // Unmount and remount (reload) -> restored from localStorage
+    unmount()
+    render(renderPanel(101))
+    expect(screen.getByRole('button', { name: 'Rough (rough)' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('[REQ-435/AC-17] preserves paramValues and ParamSync slave state while a stage is collapsed', () => {
+    const queryClient = createStageQueryClient()
+    const setParamValues = vi.fn()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ParamPanel
+          workflowId={303}
+          stageGrouping
+          paramMappings={stageMappings}
+          paramValues={{ cfg_main: '7.5', cfg_rough: '5.0' }}
+          setParamValues={setParamValues}
+          paramSyncGroups={[
+            {
+              id: 1,
+              workflow_id: 303,
+              name: 'CFG Sync',
+              is_enabled: true,
+              master_role: 'cfg_main',
+              slave_roles: ['cfg_rough'],
+              created_at: '2026-08-01T00:00:00Z',
+            },
+          ]}
+        />
+      </QueryClientProvider>,
+    )
+
+    const roughBtn = screen.getByRole('button', { name: 'Rough (rough)' })
+    fireEvent.click(roughBtn)
+    expect(roughBtn).toHaveAttribute('aria-expanded', 'false')
+
+    // Collapsed slave input remains in DOM with its value and disabled sync state
+    const roughInput = document.getElementById('param-cfg_rough') as HTMLInputElement
+    expect(roughInput).toBeInTheDocument()
+    expect(roughInput.value).toBe('5.0')
+    expect(roughInput).toBeDisabled()
+
+    // Editing expanded master still sends full paramValues preserving cfg_rough
+    const mainInput = document.getElementById('param-cfg_main') as HTMLInputElement
+    fireEvent.change(mainInput, { target: { value: '8.0' } })
+    expect(setParamValues).toHaveBeenCalledWith({ cfg_main: '8.0', cfg_rough: '5.0' })
+
+    // Re-expanding shows the input still synchronized/disabled
+    fireEvent.click(roughBtn)
+    expect(roughBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('param-cfg_rough')).toBeDisabled()
+  })
+})

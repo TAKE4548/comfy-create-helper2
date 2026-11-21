@@ -26,6 +26,7 @@ import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import { useSystemStats } from '../../../hooks/useSystemStats'
 import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 import { useMappingStageGroups } from '../../../hooks/useMappingStageGroups'
+import { useStageCollapseState } from '../../../hooks/useStageCollapseState'
 import StageInputGroup from '../../../components/StageInputGroup'
 import { PresetTabItem } from './PresetTabItem'
 import { PresetTabCloseMenu, type PresetTabCloseCounts } from './PresetTabCloseMenu'
@@ -127,6 +128,9 @@ export const DesktopLayout = ({
   }, [isTemplateActive, textMappings, assignedTargetRoles])
 
   const textStageGroups = useMappingStageGroups(displayPromptMappings, mappingMasters, true)
+  const { isStageCollapsed: isPromptStageCollapsed, toggleStageCollapsed: togglePromptStageCollapsed } =
+    useStageCollapseState(selectedWorkflowId, 'prompt')
+  const promptStageKeys = useMemo(() => textStageGroups.map((g) => g.key), [textStageGroups])
 
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
@@ -528,7 +532,15 @@ export const DesktopLayout = ({
             )}
             <div className="space-y-0">
             {textStageGroups.map((group) => (
-          <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
+          <StageInputGroup
+            key={group.key}
+            groupKey={group.key}
+            stageName={group.stageName}
+            stageKey={group.stageKey}
+            collapsible
+            collapsed={isPromptStageCollapsed(group.key)}
+            onToggleCollapse={() => togglePromptStageCollapsed(group.key, promptStageKeys)}
+          >
             <div className="space-y-0">
         {group.mappings.map((m) => {
           const isNegative = m.role?.toLowerCase().includes('negative')
@@ -670,6 +682,7 @@ export const DesktopLayout = ({
           onToggleParamSync={(groupId, isEnabled) => toggleParamSyncGroup(groupId, isEnabled)}
           onOpenParamSyncSettings={() => setIsParamSyncSettingsOpen(true)}
           stageGrouping={true}
+          workflowId={selectedWorkflowId}
         />
           </div>
           </div>
@@ -767,16 +780,16 @@ export const DesktopLayout = ({
       <div id="desktop-action-bar" className="sticky bottom-0 z-30 flex-shrink-0 border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3 flex items-center gap-2">
         <button id="queue-open-btn" type="button" onClick={() => setIsJobModalOpen(true)}
           aria-label={unconfirmedCount > 0 ? `ジョブキュー一覧・管理を開く（状態未確認 ${unconfirmedCount}件）` : 'ジョブキュー一覧・管理を開く'} title="ジョブキュー一覧・管理を開く"
-          className="min-h-11 px-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-[11px] font-mono text-zinc-300 hover:bg-white/5 transition-colors">
+          className="h-9 px-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-[11px] font-mono text-zinc-300 hover:bg-white/5 transition-colors">
           Queue: {actionQueueCount}
           {unconfirmedCount > 0 && <span data-testid="unconfirmed-count-chip" className="ml-2 shrink-0 whitespace-nowrap font-sans font-semibold text-amber-300">状態未確認 {unconfirmedCount}件</span>}
         </button>
         <button id="generate-btn" type="button" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
-          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
+          className="flex-1 flex items-center justify-center gap-2 h-9 py-1.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
           <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
         </button>
         <button id="save-snapshot-btn" type="button" onClick={() => setIsSaveModalOpen(true)} disabled={isMultiSelectMode ? selectedIds.size === 0 : !selectedImg}
-          className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+          className="flex items-center gap-2 px-4 h-9 py-1.5 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
           <Camera size={15} /><span className="hidden sm:inline">Save Snapshot</span>
         </button>
       </div>
@@ -867,15 +880,27 @@ export const DesktopLayout = ({
 
       {/* Full-Width Preset Tabs Bar */}
       {selectedWorkflowId && (
-        <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2 w-full overflow-hidden flex-shrink-0 relative z-10">
-          <div className="flex items-center gap-2 overflow-x-auto w-full py-1 scrollbar-thin">
+        <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-1 w-full overflow-hidden flex-shrink-0 relative z-10">
+          <div className="flex items-center gap-2 overflow-x-auto w-full py-0.5 scrollbar-thin">
             {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-              <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
+              <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
             ))}
           </div>
         </div>
       )}
-      <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
+      <PresetTabCloseMenu
+        triggerId={menu?.id ?? ''}
+        triggerName={menu?.name ?? ''}
+        anchor={menu?.anchor ?? null}
+        counts={menuCounts}
+        pending={isPresetTabsClosing}
+        isOpen={!!menu}
+        onClose={() => setMenu(null)}
+        onCloseSingle={() => { if (!menu) return; const id = menu.id; setMenu(null); removeSet(id) }}
+        onAction={closeTabsFromMenu}
+        restoreFocus={menuRestore}
+        ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false}
+      />
 
       {/* Dual-Pane Content Area */}
       <div className="flex-1 min-h-0 relative w-full overflow-hidden">

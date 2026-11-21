@@ -1,10 +1,14 @@
 import { useId, useRef, type FocusEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import './StageInputGroup.css'
 
 export interface StageInputGroupProps {
   groupKey: string
   stageName: string
   stageKey: string
+  collapsible?: boolean
+  collapsed?: boolean
+  onToggleCollapse?: () => void
   children: ReactNode
 }
 
@@ -12,6 +16,9 @@ export default function StageInputGroup({
   groupKey,
   stageName,
   stageKey,
+  collapsible = false,
+  collapsed = false,
+  onToggleCollapse,
   children,
 }: StageInputGroupProps): React.JSX.Element {
   const resolvedName = stageName.trim() ? stageName : stageKey.trim() ? stageKey : 'ステージ不明'
@@ -19,6 +26,8 @@ export default function StageInputGroup({
   const sectionRef = useRef<HTMLElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const headingId = useId()
+  const bodyId = useId()
+  const isCollapsed = Boolean(collapsible && collapsed)
 
   const exposeFocusedControl = (event: FocusEvent<HTMLElement>) => {
     const target = event.target
@@ -58,13 +67,39 @@ export default function StageInputGroup({
       <h3
         ref={headingRef}
         id={headingId}
-        className="stage-input-group__heading"
+        className={collapsible ? 'stage-input-group__heading stage-input-group__heading--collapsible' : 'stage-input-group__heading'}
         title={resolvedName}
         aria-label={`${resolvedName} (${accessibleKey})`}
       >
-        <span className="stage-input-group__name">{resolvedName}</span>
+        {collapsible ? (
+          <button
+            type="button"
+            data-tap-target-exempt
+            className="stage-input-group__toggle"
+            aria-expanded={!isCollapsed}
+            aria-controls={bodyId}
+            aria-label={`${resolvedName} (${accessibleKey})`}
+            onClick={onToggleCollapse}
+          >
+            {isCollapsed ? (
+              <ChevronRight aria-hidden="true" size={14} className="stage-input-group__chevron" />
+            ) : (
+              <ChevronDown aria-hidden="true" size={14} className="stage-input-group__chevron" />
+            )}
+            <span className="stage-input-group__name">{resolvedName}</span>
+            <span className="sr-only">{isCollapsed ? '折り畳み中' : '展開中'}</span>
+          </button>
+        ) : (
+          <span className="stage-input-group__name">{resolvedName}</span>
+        )}
       </h3>
-      <div className="stage-input-group__body">{children}</div>
+      <div
+        id={collapsible ? bodyId : undefined}
+        className="stage-input-group__body"
+        hidden={isCollapsed}
+      >
+        {children}
+      </div>
     </section>
   )
 }

@@ -297,13 +297,15 @@ export function HistoryPage() {
             actions={
               <div className="flex items-center gap-2">
                 {/* View Toggle */}
-                <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] flex-shrink-0">
+                <div className="flex rounded-lg border border-[rgba(255,255,255,0.08)] flex-shrink-0">
                   {(['snapshots', 'albums'] as const).map((v) => (
                     <button
                       key={v}
                       id={`view-${v}`}
+                      type="button"
+                      data-tap-target-exempt
                       onClick={() => setView(v)}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-colors ${
+                      className={`relative h-8 md:h-auto touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-1.5 md:before:hidden first:rounded-l-lg last:rounded-r-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                         view === v
                           ? 'bg-surface-2 text-zinc-200'
                           : 'text-zinc-500 hover:text-zinc-300'
@@ -318,8 +320,10 @@ export function HistoryPage() {
 
                 <button
                   id="open-batch-speech-modal-btn"
+                  type="button"
+                  data-tap-target-exempt
                   onClick={() => setIsBatchSpeechModalOpen(true)}
-                  className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-[#7C6FDD] hover:text-[#9084e6] hover:bg-[#7C6FDD]/10 transition-all font-medium whitespace-nowrap"
+                  className="relative h-8 md:h-auto touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[7px] md:before:hidden flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-[#7C6FDD] hover:text-[#9084e6] hover:bg-[#7C6FDD]/10 transition-all font-medium whitespace-nowrap"
                 >
                   <Sparkles size={13} />
                   <span>セリフ一括変換</span>
@@ -332,8 +336,10 @@ export function HistoryPage() {
                 {!snapshotMultiSelect.isMultiSelectMode && view === 'snapshots' && (
                   <button
                     id="start-create-album"
+                    type="button"
+                    data-tap-target-exempt
                     onClick={() => snapshotMultiSelect.enterMultiSelectMode()}
-                    className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all whitespace-nowrap"
+                    className="relative h-8 md:h-auto touch-manipulation before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[7px] md:before:hidden flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all whitespace-nowrap"
                   >
                     <BookOpen size={13} />
                     <span>Add to Album</span>

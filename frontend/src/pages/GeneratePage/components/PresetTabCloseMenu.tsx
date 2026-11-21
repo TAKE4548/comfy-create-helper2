@@ -13,19 +13,23 @@ interface Props {
   isOpen: boolean
   ignoreOpenReleaseClick?: boolean
   onClose: () => void
+  onCloseSingle?: () => void
   onAction: (mode: PresetTabCloseMode) => void | Promise<void>
   restoreFocus: HTMLElement | null
 }
-const modes: PresetTabCloseMode[] = ['others', 'left', 'right']
-const labels: Record<PresetTabCloseMode, string> = { others: '他のタブを閉じる', left: '左のタブをすべて閉じる', right: '右のタブをすべて閉じる' }
+const modes: PresetTabCloseMode[] = ['left', 'right', 'others']
+const labels: Record<PresetTabCloseMode, string> = { left: '左のタブをすべて閉じる', right: '右のタブをすべて閉じる', others: '他のタブを閉じる' }
 
-export function PresetTabCloseMenu({ triggerId, triggerName, anchor, counts, pending, isOpen, onClose, onAction, restoreFocus, ignoreOpenReleaseClick = false }: Props) {
+export function PresetTabCloseMenu({ triggerId, triggerName, anchor, counts, pending, isOpen, onClose, onCloseSingle, onAction, restoreFocus, ignoreOpenReleaseClick = false }: Props) {
   const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
-  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 240 })
+  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 288 })
   const root = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const items = useRef<(HTMLButtonElement | null)[]>([])
-  const enabled = modes.map((mode) => pending || counts[mode] === 0 ? null : modes.indexOf(mode)).filter((i): i is number => i !== null)
+  const enabled = [
+    ...(pending ? [] : [0]),
+    ...modes.map((mode, index) => (pending || counts[mode] === 0 ? null : index + 1)).filter((i): i is number => i !== null),
+  ]
   const close = useCallback(() => { onClose(); requestAnimationFrame(() => (restoreFocus?.isConnected ? restoreFocus : document.querySelector<HTMLElement>('[data-preset-select][aria-current="true"]'))?.focus?.()) }, [onClose, restoreFocus])
   useEffect(() => {
     const resize = () => setMobile(window.innerWidth < 768)
@@ -37,7 +41,7 @@ export function PresetTabCloseMenu({ triggerId, triggerName, anchor, counts, pen
     const update = () => {
       if (!anchor?.isConnected || mobile) return
       const rect = anchor.getBoundingClientRect()
-      const width = 248, height = Math.min(240, window.innerHeight - 16)
+      const width = 248, height = Math.min(288, window.innerHeight - 16)
       setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - height - 8)), maxHeight: height })
     }
     update(); window.addEventListener('resize', update); window.addEventListener('scroll', update, true)
@@ -96,7 +100,8 @@ export function PresetTabCloseMenu({ triggerId, triggerName, anchor, counts, pen
   if (!isOpen) return null
   const body = <div ref={root} onKeyDown={onKeyDown} aria-label={`${triggerName}のタブ操作`} className="w-[248px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-white/10 bg-zinc-900 p-2 shadow-2xl" style={{ maxHeight: mobile ? '70dvh' : position.maxHeight }}>
     <div className="mb-2 truncate px-2 py-1 text-sm font-semibold text-white">{triggerName}</div>
-    {modes.map((mode, index) => <button key={mode} ref={(node) => { items.current[index] = node }} type="button" role={mobile ? undefined : 'menuitem'} disabled={pending || counts[mode] === 0} onClick={() => { void onAction(mode) }} className="block min-h-11 w-full truncate rounded px-3 text-left text-sm text-white hover:bg-white/10 disabled:opacity-40">{labels[mode]}</button>)}
+    <button ref={(node) => { items.current[0] = node }} type="button" role={mobile ? undefined : 'menuitem'} disabled={pending} onClick={() => { onCloseSingle?.() }} className="block min-h-11 w-full truncate rounded px-3 text-left text-sm text-white hover:bg-white/10 disabled:opacity-40">このタブを閉じる</button>
+    {modes.map((mode, index) => <button key={mode} ref={(node) => { items.current[index + 1] = node }} type="button" role={mobile ? undefined : 'menuitem'} disabled={pending || counts[mode] === 0} onClick={() => { void onAction(mode) }} className="block min-h-11 w-full truncate rounded px-3 text-left text-sm text-white hover:bg-white/10 disabled:opacity-40">{labels[mode]}</button>)}
     <button ref={closeRef} type="button" role={mobile ? undefined : 'menuitem'} onClick={close} className="mt-1 min-h-11 w-full rounded border border-white/10 text-sm text-white">閉じる</button>
   </div>
   const desktop = !mobile && createPortal(<div className="fixed inset-0 z-[1000]" onPointerDown={(event) => { if (event.target === event.currentTarget) { event.preventDefault(); close() } }} onClick={(event) => { if (event.target === event.currentTarget) close() }}>

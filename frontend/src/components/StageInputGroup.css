@@ -28,6 +28,42 @@
   font-weight: 600;
 }
 
+.stage-input-group__heading--collapsible {
+  padding: 0;
+  overflow: visible;
+}
+
+.stage-input-group__toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-input-group__toggle:hover {
+  color: #f4f4f5;
+}
+
+.stage-input-group__toggle:focus-visible {
+  outline: 2px solid rgba(34, 197, 94, 0.7);
+  outline-offset: -2px;
+}
+
+.stage-input-group__chevron {
+  flex-shrink: 0;
+}
+
 .stage-input-group__name {
   min-width: 0;
   overflow: hidden;
@@ -37,6 +73,21 @@
 
 .stage-input-group__body {
   padding: 8px 0 12px;
+}
+
+.stage-input-group__body[hidden] {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .stage-input-group__toggle::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -4px;
+    bottom: -4px;
+  }
 }
 
 .stage-input-group input,

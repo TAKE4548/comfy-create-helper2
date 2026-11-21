@@ -8,6 +8,7 @@ import { bypassProfilesApi, paramSyncGroupsApi } from '../../../api/client'
 import { generationApi } from '../../../api/domains/generation'
 import type { GenerationSnapshot, JobView } from '../../../api/domains/generation'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { selectMobileOverallProgress, selectProgress } from '../../../utils/generationSelectors'
 import { useGenerateDisplayState } from '../hooks/useGenerateDisplayState'
 import { cleanupAllTestState } from '../../../test/utils'
 
@@ -367,5 +368,113 @@ describe('E2E Automated Verification: REQ-207 5大シナリオ統合検証', () 
     await vi.waitFor(() => expect(useGenerationStore.getState().isConnected).toBe(true))
 
     vi.useRealTimers()
+  })
+})
+
+describe('selectMobileOverallProgress [REQ-435]', () => {
+  const makeJob = (id: string, status: JobView['status']): JobView => ({
+    job_id: id,
+    request_id: 'req-1',
+    prompt_id: `p-${id}`,
+    session_id: 'sess-a',
+    scope: 'normal',
+    batch_id: 'b-1',
+    normal_group_id: 'g-1',
+    project_id: null,
+    status,
+    started_at: null,
+    finished_at: null,
+    node: null,
+    outputs: [],
+    failure: null,
+  })
+
+  const makeSnap = (jobs: JobView[]): GenerationSnapshot => ({
+    version: 1,
+    epoch: 'e1',
+    revision: 1,
+    normal_group_id: 'g-1',
+    jobs,
+    batches: [],
+    upstream: { http_ready: true, ws_connected: true, failure_since: null },
+  })
+
+  it('[REQ-435/AC-7] computes n/m across normal progression and completion and falls back to activeBatch when snapshot is absent', () => {
+    const snapStart = makeSnap([makeJob('1', 'running'), makeJob('2', 'queued'), makeJob('3', 'queued')])
+    expect(selectMobileOverallProgress(selectProgress(snapStart, 'normal', 'sess-a'), null, true)).toEqual({
+      current: 1,
+      total: 3,
+      label: '1/3',
+    })
+
+    const snapMid = makeSnap([makeJob('1', 'succeeded'), makeJob('2', 'running'), makeJob('3', 'queued')])
+    expect(selectMobileOverallProgress(selectProgress(snapMid, 'normal', 'sess-a'), null, true)).toEqual({
+      current: 2,
+      total: 3,
+      label: '2/3',
+    })
+
+    const snapDone = makeSnap([makeJob('1', 'succeeded'), makeJob('2', 'succeeded'), makeJob('3', 'succeeded')])
+    expect(selectMobileOverallProgress(selectProgress(snapDone, 'normal', 'sess-a'), null, true)).toEqual({
+      current: 3,
+      total: 3,
+      label: '3/3',
+    })
+
+    // activeBatch fallback when normalProgress is null
+    expect(
+      selectMobileOverallProgress(
+        null,
+        [{ status: 'completed' }, { status: 'failed' }, { status: 'running' }, { status: 'cancelled' }],
+        true,
+      ),
+    ).toEqual({
+      current: 3,
+      total: 3,
+      label: '3/3',
+    })
+
+    expect(
+      selectMobileOverallProgress(
+        null,
+        [{ status: 'completed' }, { status: 'queued' }, { status: 'queued' }],
+        true,
+      ),
+    ).toEqual({
+      current: 2,
+      total: 3,
+      label: '2/3',
+    })
+
+    // Fallback returns null when not generating here or batch is empty
+    expect(selectMobileOverallProgress(null, [{ status: 'running' }], false)).toBeNull()
+    expect(selectMobileOverallProgress(null, [], true)).toBeNull()
+  })
+
+  it('[REQ-435/AC-8] counts failed as completed, excludes cancelled/released/unconfirmed from total, and returns null for 0 valid jobs', () => {
+    const snapMixed = makeSnap([
+      makeJob('1', 'failed'),
+      makeJob('2', 'running'),
+      makeJob('3', 'cancelled'),
+      makeJob('4', 'released'),
+      makeJob('5', 'unconfirmed'),
+    ])
+    expect(selectMobileOverallProgress(selectProgress(snapMixed, 'normal', 'sess-a'), null, true)).toEqual({
+      current: 2,
+      total: 2,
+      label: '2/2',
+    })
+
+    const snapZeroValid = makeSnap([makeJob('1', 'cancelled'), makeJob('2', 'unconfirmed')])
+    // normalProgress takes priority even when total is 0 and activeBatch has items
+    expect(
+      selectMobileOverallProgress(
+        selectProgress(snapZeroValid, 'normal', 'sess-a'),
+        [{ status: 'running' }],
+        true,
+      ),
+    ).toBeNull()
+
+    expect(selectMobileOverallProgress({ finished: 0, total: 0 }, null, true)).toBeNull()
   })
 })

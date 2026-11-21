@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -146,5 +147,77 @@ describe('StageInputGroup', () => {
     expect(styles).not.toContain('stage-input-group__key')
     expect(styles).toMatch(/\.stage-input-group\s+input/)
     expect(styles).toMatch(/scroll-margin-top:\s*44px/)
+  })
+
+  it('[REQ-435/AC-14] preserves non-collapsible DOM by default and supports collapsible click/keyboard toggle with aria-expanded and hidden body', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <StageInputGroup groupKey="g1" stageName="Main" stageKey="main">
+        <input aria-label="field-a" />
+      </StageInputGroup>,
+    )
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    const defaultBody = screen.getByRole('textbox', { name: 'field-a' }).parentElement!
+    expect(defaultBody).not.toHaveAttribute('hidden')
+
+    const onToggleCollapse = vi.fn()
+    rerender(
+      <StageInputGroup
+        groupKey="g1"
+        stageName="Main"
+        stageKey="main"
+        collapsible
+        collapsed={false}
+        onToggleCollapse={onToggleCollapse}
+      >
+        <input aria-label="field-a" />
+      </StageInputGroup>,
+    )
+
+    const toggleBtn = screen.getByRole('button', { name: 'Main (main)' })
+    expect(toggleBtn).toHaveAttribute('type', 'button')
+    expect(toggleBtn).toHaveAttribute('data-tap-target-exempt')
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true')
+    const controlsId = toggleBtn.getAttribute('aria-controls')
+    expect(controlsId).toBeTruthy()
+    const bodyEl = document.getElementById(controlsId!)!
+    expect(bodyEl).toBeInTheDocument()
+    expect(bodyEl).not.toHaveAttribute('hidden')
+    expect(toggleBtn.querySelector('.sr-only')).toBeInTheDocument()
+
+    await user.click(toggleBtn)
+    toggleBtn.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onToggleCollapse).toHaveBeenCalledTimes(3)
+
+    rerender(
+      <StageInputGroup
+        groupKey="g1"
+        stageName="Main"
+        stageKey="main"
+        collapsible
+        collapsed={true}
+        onToggleCollapse={onToggleCollapse}
+      >
+        <input aria-label="field-a" />
+      </StageInputGroup>,
+    )
+
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false')
+    expect(bodyEl).toHaveAttribute('hidden')
+    expect(screen.queryByRole('textbox', { name: 'field-a' })).not.toBeInTheDocument()
+    expect(document.querySelector('input[aria-label="field-a"]')).toBeInTheDocument()
+  })
+
+  it('[REQ-435/AC-18] preserves sticky heading contract, hidden body rule, focus-visible, and mobile 44px hit-slop', () => {
+    const styles = readFileSync(join(process.cwd(), 'src/components/StageInputGroup.css'), 'utf8')
+    expect(styles).toMatch(/\.stage-input-group__heading[\s\S]*position:\s*sticky/)
+    expect(styles).toMatch(/\.stage-input-group__heading[\s\S]*z-index:\s*10/)
+    expect(styles).toMatch(/\.stage-input-group__heading[\s\S]*font-size:\s*12px/)
+    expect(styles).toMatch(/\.stage-input-group__body\[hidden\][\s\S]*display:\s*none/)
+    expect(styles).toMatch(/\.stage-input-group__toggle:focus-visible/)
+    expect(styles).toMatch(/@media\s*\(max-width:\s*767px\)[\s\S]*\.stage-input-group__toggle::before/)
   })
 })
